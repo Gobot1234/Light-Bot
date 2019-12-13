@@ -101,17 +101,14 @@ class HelpCommand(commands.HelpCommand):
                               description=current_cog.description, color=discord.Colour.purple())
         embed.set_author(name=f'We are currently on page {page + 1}/{len(self.all_cogs)}',
                          icon_url=ctx.author.avatar_url)
-        try:
-            for c in current_cog.walk_commands():
-                if await c.can_run(ctx) and c.hidden is False:
-                    signature = self.get_command_signature(c)
-                    description = self.get_command_description(c)
-                    if c.parent:
-                        embed.add_field(name=f'╚╡**`{signature[2:]}**', value=description, inline=True)
-                    else:
-                        embed.add_field(name=signature, value=description, inline=False)
-        except:
-            pass
+        for c in current_cog.walk_commands():
+            if await c.can_run(ctx) and c.hidden is False:
+                signature = self.get_command_signature(c)
+                description = self.get_command_description(c)
+                if c.parent:
+                    embed.add_field(name=f'╚╡**`{signature[2:]}**', value=description, inline=True)
+                else:
+                    embed.add_field(name=signature, value=description, inline=False)
         embed.set_footer(text=f'Use "{self.clean_prefix}help <command>" for more info on a command.')
         return embed
 
@@ -201,9 +198,8 @@ class HelpCommand(commands.HelpCommand):
         bot = ctx.bot
 
         cog_commands = [command for command in await self.filter_commands(cog.walk_commands())]
-        cog_n = cog.qualified_name
 
-        embed = discord.Embed(title=f'Help with {cog_n} ({len(cog_commands)} commands)',
+        embed = discord.Embed(title=f'Help with {cog.qualified_name} ({len(cog_commands)} commands)',
                               description=cog.description, color=discord.Colour.purple())
         embed.set_author(name=f'We are currently looking at the module {cog.qualified_name} and its commands',
                          icon_url=ctx.author.avatar_url)
@@ -223,12 +219,10 @@ class HelpCommand(commands.HelpCommand):
     async def send_command_help(self, command):
         ctx = self.context
         bot = ctx.bot
-
-        cog_n = command.cog.qualified_name
-
+        
         if await command.can_run(ctx):
             embed = discord.Embed(title=f'Help with `{command.name}`', color=discord.Colour.purple())
-            embed.set_author(name=f'We are currently looking at the {cog_n} cog and its command {command.name}',
+            embed.set_author(name=f'We are currently looking at the {command.cog.qualified_name} cog and its command {command.name}',
                              icon_url=ctx.author.avatar_url)
             signature = self.get_command_signature(command)
             description = self.get_full_command_description(command)
@@ -247,9 +241,8 @@ class HelpCommand(commands.HelpCommand):
 
         embed = discord.Embed(title=f'Help with `{group.name}`', description=bot.get_command(group.name).help,
                               color=discord.Colour.purple())
-        embed.set_author(
-            name=f'We are currently looking at the {group.cog.qualified_name} cog and its command {group.name}',
-            icon_url=ctx.author.avatar_url)
+        embed.set_author(name=f'We are currently looking at the {group.cog.qualified_name} cog and its command {group.name}',
+                         icon_url=ctx.author.avatar_url)
         for command in group.walk_commands():
             if await command.can_run(ctx):
                 signature = self.get_command_signature(command)
