@@ -1,11 +1,7 @@
 import asyncio
 import discord
 from datetime import datetime, timedelta
-from psutil import Process, virtual_memory, cpu_percent
-from humanize import naturalsize
-from discord import __version__ as d_version
-
-from platform import python_version
+from psutil import Process
 
 from typing import Optional
 from discord.ext import commands
@@ -26,6 +22,11 @@ class Staff(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.process = Process()
+
+    async def cog_check(self, ctx):
+
+        return ctx.author.guild_permissions.ban_members or ctx.author.guild_permissions.kick_members \
+               or ctx.author.guild_permissions.manage_roles or ctx.author.permissions_in(ctx.channel).manage_messages
 
     async def unmute_timer(self, time: int, member, ctx):
         await asyncio.sleep(time)
@@ -59,10 +60,12 @@ class Staff(commands.Cog):
             messages.extend(f'**{name}**: {count}' for name, count in spammers)
 
             to_send = '\n'.join(messages)
+            nl = '\n'
 
             embed = discord.Embed(title='Messages cleared',
-                                  description=f'**The clear command was used in {ctx.channel.mention} by {ctx.author.mention} '
-                                              f'to delete `{limit}` messages**',
+                                  description=f'**The clear command was used in {ctx.channel.mention} by {ctx.author.mention}** '
+                                              f'to delete `{limit}` message{"" if deleted == 1 else "s"} from:\n'
+                                              f'{f"{nl}".join(f"**{name}**: {count}" for name, count in spammers)}',
                                   color=discord.Color.blue())
             embed.set_footer(text=str(datetime.now())[:-5], icon_url=ctx.author.avatar_url)
             await ctx.guild.system_channel.send(embed=embed)
@@ -91,7 +94,7 @@ class Staff(commands.Cog):
             await ctx.send_help(ctx.command)
 
     @clear.command(name='all')
-    async def _remove_all(self, ctx, search: int = 100):
+    async def _remove_all(self, ctx, search: int = 10):
         """Removes all messages."""
         if search >= 100:
             search = 100
@@ -127,6 +130,14 @@ class Staff(commands.Cog):
         else:
             await self.do_removal(ctx, 100, lambda e: substr in e.content)
 
+    @clear.command()
+    async def bot(self, ctx, search=100):
+        """Cleans up the bot's messages from the channel.
+        If a search number is specified, it searches that many messages to delete.
+        You must have Manage Messages permission to use this.
+        """
+        await self.do_removal(ctx, search, lambda e: e.author == ctx.me)
+
     #  mute ------------------------------------------------------------------------------------------------------------
 
     @commands.command()
@@ -148,7 +159,7 @@ class Staff(commands.Cog):
     @commands.command()
     @commands.has_permissions(manage_roles=True)
     async def unmute(self, ctx, members: commands.Greedy[discord.Member], *, reason='None given'):
-        """Un-mutes a user"""
+        """Un-mute users"""
         role = discord.utils.get(ctx.guild.roles, name='Muted')
         for member in members:
             if role not in member.roles:
