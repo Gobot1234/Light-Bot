@@ -1,15 +1,19 @@
 from asyncio import TimeoutError
+from itertools import islice
+
 from psutil import virtual_memory, cpu_percent, Process
 from humanize import naturalsize
 from platform import python_version
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+import pygit2
 
 # import asyncpg
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 
 from Cogs.owner import Owner
 from Utils.checks import prefix
+from Utils.time import human_timedelta
 
 
 class HelpCommand(commands.HelpCommand):
@@ -57,11 +61,18 @@ class HelpCommand(commands.HelpCommand):
         ctx = self.context
         bot = ctx.bot
         page = 0
-        cogs = [name for name, obj in bot.cogs.items() if await obj.cog_check(ctx)]  # get all of your cogs
+        cogs = []
+
+        for name, obj in bot.cogs.items():
+            try:
+                if await obj.cog_check(ctx):
+                    cogs.append(name)
+            except:
+                pass
         cogs.sort()
 
         def check(reaction, user):  # check who is reacting to the message
-            return user == ctx.author
+            return user == ctx.author and help_embed.id == reaction.message.id
         embed = await self.bot_help_paginator(page, cogs)
         help_embed = await ctx.send(embed=embed)  # sends the first help page
 
@@ -76,7 +87,7 @@ class HelpCommand(commands.HelpCommand):
 
         while 1:
             try:
-                reaction, user = await bot.wait_for('reaction_add', timeout=60, check=check)  # checks message reactions
+                reaction, user = await bot.wait_for('reaction_add', timeout=90, check=check)  # checks message reactions
             except TimeoutError:  # session has timed out
                 try:
                     await help_embed.clear_reactions()
@@ -258,16 +269,62 @@ class Help(commands.Cog):
         days, hours = divmod(hours, 24)
         return f'`{days}d, {hours}h, {minutes}m, {seconds}s`'
 
-    @commands.command(aliases=['about', 'stats', 'status'])
-    @commands.cooldown(rate=1, per=10, type=commands.BucketType.user)
-    async def info(self, ctx):
-        """Get some info and stats about the bot"""
+    def format_commit(self, commit):
+        short, _, _ = commit.message.partition('\n')
+        short_sha2 = commit.hex[0:6]
+        commit_tz = timezone(timedelta(minutes=commit.commit_time_offset))
+        commit_time = datetime.fromtimestamp(commit.commit_time).replace(tzinfo=commit_tz)
+
+        # [`hash`](url) message (offset)
+        offset = human_timedelta(commit_time.astimezone(timezone.utc).replace(tzinfo=None), accuracy=1)
+        return f'[`{short_sha2}`](https://github.com/Gobot1234/Epic-Bot/commit/{commit.hex}) {short} ({offset})'
+
+    def get_last_commits(self, count=3):
+        repo = pygit2.Repository('.git')
+        commits = list(islice(repo.walk(repo.head.target, pygit2.GIT_SORT_TOPOLOGICAL), count))
+        return '\n'.join(self.format_commit(c) for c in commits)
+
+    @commands.command()
+    async def stats(self, ctx):
         uptime = await self.get_uptime()
         memory_usage = self.process.memory_full_info().uss
         rawram = virtual_memory()
-        embed = discord.Embed(title=f'**{self.bot.user.name}** - System information',
-                              description=f'Commands loaded & Cogs loaded: `{len(self.bot.commands)}` commands loaded, '
-                                          f'`{len(self.bot.cogs)}` cogs loaded :gear:', colour=discord.Colour.blurple())
+
+        embed = discord.Embed(title=f'**{self.bot.user.name}** - Official Bot Server Invite & System information',
+                              url='https://discord.gg/h8chCgW',
+                              description=f'**Commands loaded & Cogs loaded:** `{len(self.bot.commands)}` commands loaded, '
+                                          f'`{len(self.bot.cogs)}` cogs loaded :gear:\n'
+                                          f'**Latest Changes:**\n{self.get_last_commits()}',
+                              colour=discord.Colour.blurple(), timestamp=datetime.now())
+        owner = self.bot.get_user(self.bot.owner_id)
+        embed.set_author(name=str(owner), icon_url=owner.avatar_url)
+
+        # statistics
+        total_members = 0
+        total_online = 0
+        offline = discord.Status.offline
+        for member in self.bot.get_all_members():
+            total_members += 1
+            if member.status is not offline:
+                total_online += 1
+
+        total_unique = len(self.bot.users)
+
+        text = 0
+        voice = 0
+        guilds = 0
+        for guild in self.bot.guilds:
+            guilds += 1
+            for channel in guild.channels:
+                if isinstance(channel, discord.TextChannel):
+                    text += 1
+                elif isinstance(channel, discord.VoiceChannel):
+                    voice += 1
+
+        embed.add_field(name='Members', value=f'{total_members} total\n{total_unique} unique\n{total_online} unique online')
+        embed.add_field(name='Channels', value=f'{text + voice} total\n{text} text\n{voice} voice')
+        embed.add_field(name='Guilds', value=guilds)
+
         embed.add_field(name="<:compram:622622385182474254> RAM Usage",
                         value=f'Using `{naturalsize(rawram[3])}` / `{naturalsize(rawram[0])}` `{round(rawram[3] / rawram[0] * 100, 2)}`% '
                               f'of your physical memory and `{naturalsize(memory_usage)}` of which unique to this process.')
@@ -280,11 +337,12 @@ class Help(commands.Cog):
                         value=f'`{discord.__version__}` works with versions 1.1+ of Discord.py and versions 3.5.4+ of Python')
         embed.add_field(name='<:python:622621989474926622> Python Version',
                         value=f'`{python_version()}` works with versions 3.6+ (uses f-strings)')
+
         embed.set_footer(text="If you need any help join the help server of this code discord.gg",
                          icon_url='https://cdn.discordapp.com/avatars/340869611903909888/9e3719ecc71ebfb3612ceccf02da4c7a.webp?size=1024')
         await ctx.send(embed=embed)
 
-    @commands.group()
+    @commands.group(invoke_without_subcommand=True)
     @commands.has_permissions(administrator=True)
     async def prefix(self, ctx):
         if ctx.invoked_subcommand is None:
@@ -292,7 +350,7 @@ class Help(commands.Cog):
 
     @prefix.command()
     async def add(self, ctx, prefix):
-        if prefix.startswith(f'<@{self.bot.user.id}>') or prefix.startswith(f'<@!{self.bot.user.id}>'):
+        if prefix.startswith(f'<@{ctx.me.id}>') or prefix.startswith(f'<@!{ctx.me.id}>'):
             await ctx.send('I\'m sorry but you can\'t use that prefix')
         else:
             # add to db
@@ -304,8 +362,8 @@ class Help(commands.Cog):
         if prefix.startswith(f'<@{self.bot.user.id}>') or prefix.startswith(f'<@!{self.bot.user.id}>'):
             await ctx.send('I\'m sorry but you can\'t use that prefix')
         else:
-            # add to db
-            # add to cached dict
+            # remove from db
+            # remove from cached dict
             await ctx.send(f'Prefix successfully changed to `{prefix}`')
 
 

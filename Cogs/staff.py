@@ -146,6 +146,8 @@ class Staff(commands.Cog):
                    until: UserFriendlyTime(commands.clean_content)):
         """Mutes a user for a specific time"""
         muted = discord.utils.get(ctx.guild.roles, name='Muted')
+        if muted is None:
+            await ctx.guild.create_role(name='Muted', colour=0x2f3136, reason='Created automatically as none was found')
         for member in members:
             if member == ctx.author or member.id == self.bot.user.id:
                 return await ctx.send('Why would you do that???', delete_after=3)
@@ -154,6 +156,9 @@ class Staff(commands.Cog):
             await ctx.send(
                 f'Muted `{member.display_name}`, for reason `{until.arg}`, they will be un-muted in `{human_delta}`')
             await member.add_roles(muted, reason=until.arg)
+            for channel in ctx.guild.channels:
+                await channel.set_permissions(muted, read_messages=True, send_messages=False,
+                                              add_reactions=False, remove_reactions=False)
             await self.unmute_timer(bot_delta, member, ctx)
 
     @commands.command()
@@ -179,14 +184,17 @@ class Staff(commands.Cog):
         if ctx.author in members:
             return await ctx.channel.send('You cannot ban yourself, well you can try')
         for member in members:
-            await member.send(f'You have been banned from {ctx.guild.name} for {reason}')
+            try:
+                await member.send(f'You have been banned from {ctx.guild.name} for {reason}')
+            except discord.Forbidden:
+                pass
             await member.ban(delete_message_days=delete_days, reason=reason)
             await ctx.send(f'{member.mention} has been banned!')
 
     @commands.command()
     @commands.has_permissions(ban_members=True)
     @commands.bot_has_permissions(ban_members=True)
-    async def unban(self, ctx, *users: commands.Greedy[discord.User]):
+    async def unban(self, ctx, users: commands.Greedy[discord.User]):
         """Unban a user you need to be able to normally ban users to use this"""
         for user in users:
             try:

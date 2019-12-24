@@ -31,6 +31,12 @@ class Listeners(commands.Cog):
         activity = discord.Activity(name=status, type=discord.ActivityType.watching)
         await self.bot.change_presence(activity=activity)
 
+    @status.after_loop
+    async def after_my_task(self):
+        if self.status.failed():
+            import traceback
+            traceback.print_exc()
+
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
         # load db check if they have a voice role get its name or change perms or log it
@@ -113,7 +119,7 @@ class Listeners(commands.Cog):
     async def on_member_remove(self, member):
         embed = discord.Embed(title='Member left', description=f'{member} just left {member.guild.name}',
                               color=discord.Color.red())
-        embed.set_footer(text=f'ID: {member.author.id} • {datetime.now().strftime("%c")}', icon_url=member.avatar_url)
+        embed.set_footer(text=f'ID: {member.id} • {datetime.now().strftime("%c")}', icon_url=member.avatar_url)
         await member.guild.system_channel.send(embed=embed)
 
     # message deletes --------------------------------------------------------------------------------------------------
@@ -122,9 +128,10 @@ class Listeners(commands.Cog):
     async def on_raw_message_delete(self, payload):
         message = payload.cached_message
         if message is None:
-            embed = discord.Embed(description=f'**Message deleted in: <#{payload.channel_id}>**', color=discord.Color.red())
+            channel = self.bot.get_guild(payload.channel_id)
+            embed = discord.Embed(description=f'**Message deleted in: {channel.mention}**', color=discord.Color.red())
             embed.set_footer(text=f'{datetime.now().strftime("%c")}')
-            return await self.bot.get_guild(payload.guild_id).system_channel.send(embed=embed)
+            return await channel.guild.system_channel.send(embed=embed)
         author = message.author
         if author.bot:
             return
@@ -133,7 +140,30 @@ class Listeners(commands.Cog):
         if message.content:
             embed.description = f'Content:\n>>> {message.content}'
         if message.attachments:
-            embed.set_image(url=message.attachments[0].proxy_url)
+            if len(message.attachments) == 1:
+                if message.attachments[0].filename.endswith(('.png', '.gif', '.webp,' '.jpg')):
+                    embed.set_image(url=message.attachments[0].proxy_url)
+                else:
+                    embed.set_footer(text=f'ID: {message.author.id} • {datetime.now().strftime("%c")}',
+                                     icon_url=author.avatar_url)
+                    return await message.guild.system_channel.send(f'Deleted message included a non-image attachment, '
+                                                                   f'that cannot be relocated although its name was '
+                                                                   f'`{message.attachments[0].filename}`',
+                                                                   embed=embed)
+            elif len(message.attachments) > 1:
+                embed.set_footer(text=f'ID: {message.author.id} • {datetime.now().strftime("%c")}',
+                                 icon_url=author.avatar_url)
+                names = [f.filename for f in message.attachments]
+                for image in message.attachments:
+                    if message.attachments[0].filename.endswith(('.png', '.gif', '.webp,' '.jpg')):
+                        embed.set_image(url=image.proxy_url)
+                        break
+                embed.set_footer(text=f'ID: {message.author.id} • {datetime.now().strftime("%c")}',
+                                 icon_url=author.avatar_url)
+                return await message.guild.system_channel.send(f'Deleted message included multiple attachments, '
+                                                               f'that cannot be found :( although there names were:\n'
+                                                               f'`{"`, `".join(names)}`', embed=embed)
+
         embed.set_footer(text=f'ID: {message.author.id} • {datetime.now().strftime("%c")}', icon_url=author.avatar_url)
         await message.guild.system_channel.send(embed=embed)
 
@@ -194,7 +224,6 @@ class Listeners(commands.Cog):
                                   description=f'Before it was `{before.name}`, now it is `{after.name}`',
                                   color=discord.Colour.blurple())
         elif old:
-
             if old[0][1]:
                 embed = discord.Embed(title=f'Permission{"" if len(old) == 1 else "s"} updated for role {after.name}',
                                       description=f'Lost permission{"" if len(old) == 1 else "s"} `{"`, `".join([perm[0].title() for perm in old])}`',
@@ -209,14 +238,14 @@ class Listeners(commands.Cog):
 
         '''
     @commands.Cog.listener()
-    async def on_message(self, message):  # checking if someone someone said a blacklisted word
+    async def on_message(self, message):  # checking if someone someone said a blacklisted word TODO ADD A blacklisting command
         if message.author == self.bot.user:
             return
         blacklist_words = message.guild.id['blacklist words']
         if blacklist_words:
             split_message = re.split("(?:(?:[^a-zA-Z]+')|(?:'[^a-zA-Z]+))|(?:[^a-zA-Z']+)",
                                      str(message.content).lower())
-            if any(elem in split_message for elem in blacklist_words):
+            if any(word in split_message for word in blacklist_words):
                 await message.delete()
                 await message.author.send(f'{message.author.mention} Your message "{message.content}" '
                                           f'has been removed as it contains a blacklisted word!',
@@ -229,19 +258,17 @@ class Listeners(commands.Cog):
     @commands.Cog.listener()
     async def on_command_error(self, ctx, error):
         """Command error handler"""
-
-        # This prevents any commands with local handlers being handled here in on_command_error.
         if hasattr(ctx.command, 'on_error'):
             return
 
         ignored = (commands.CommandNotFound, commands.UserInputError, commands.CheckFailure)
-
-        # Anything in ignored will return and prevent anything happening.
         if isinstance(error, ignored):
             return
         elif isinstance(error, commands.MissingRequiredArgument):
             title = f'{ctx.command} is missing a required argument'
         elif isinstance(error, commands.CommandOnCooldown):
+            if ctx.message.author.guild_permissions.manage_roles:
+                return await ctx.reinvoke()
             title = f'{ctx.command} is on cooldown'
         elif isinstance(error, commands.BadArgument):
             title = 'Bad argument'
