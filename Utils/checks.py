@@ -23,15 +23,14 @@ def colour_neutral(ctx):
 
 def is_guild_owner(ctx):
     if ctx.author == ctx.guild.owner:
-        return
+        return True
     else:
-        raise NotGuildOwner(
-            f'You are not the owner of this guild contact {ctx.guild.owner} if a command needs to be performed')
+        raise NotGuildOwner(f'You are not the owner of this guild contact {ctx.guild.owner} if a command needs to be performed')
 
 
 def is_agsb_guild(ctx):
     if ctx.guild.id == 376064130118844416:
-        return
+        return True
     else:
         raise NotAGSBSever('You are not in the AGSB server so this command cannot be used')
 

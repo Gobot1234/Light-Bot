@@ -51,14 +51,13 @@ class EpicBot(Bot):
 
 def run_bot():
     bot = EpicBot()
-    loop = asyncio.get_event_loop()
     '''
     try: #https://gist.github.com/jegfish/cfc7b22e72426f5ced6f87caa6920fd6
         bot.pool = bot.loop.run_until_complete(create_pool(database='postgres', user='postgres', password=config.DBPassword, command_timeout=60))
     except Exception as e:
         bot.log.exception('Could not set up PostgreSQL. Exiting.')
+        raise SystemExit
     '''
-    #print(bot.pool)
     bot.run(bot)
 
 
@@ -66,7 +65,7 @@ if __name__ == '__main__':
     bot = EpicBot()
     bot.log = getLogger()
     bot.log.setLevel(DEBUG)
-    handler = FileHandler(filename='out.log', encoding='utf-8', mode='w')
-    handler.setFormatter(Formatter('%(asctime)s : %(levelname)s : %(name)s | %(message)s'))
+    handler = FileHandler(filename=f'out--{datetime.now().strftime("%d-%m-%Y-%H:%S")}.log', encoding='utf-8', mode='w')
+    handler.setFormatter(Formatter('%(asctime)s :  %(levelname)s : %(name)s | %(message)s'))
     bot.log.addHandler(handler)
     run_bot()

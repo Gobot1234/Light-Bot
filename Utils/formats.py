@@ -23,7 +23,11 @@ from traceback import format_exception
 
 
 def format_exec(exc):
-    return ''.join(type(exc).__name__, exc.__traceback__)
+    return "".join(format_exception(type(exc), exc, exc.__traceback__))
+
+
+def format_error(error):
+    return f'```py\n{"".join(format_exception(type(error), error, error.__traceback__)).split("The above exception was the direct cause of the following exception:")[0]}```'
 
 
 class plural:

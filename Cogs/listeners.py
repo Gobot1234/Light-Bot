@@ -2,9 +2,11 @@ import asyncio
 import json
 import os
 import random
+import re
 from datetime import datetime
 import sys
 import traceback
+import asyncpg
 
 import discord
 from discord.ext import commands, tasks
@@ -31,11 +33,9 @@ class Listeners(commands.Cog):
         activity = discord.Activity(name=status, type=discord.ActivityType.watching)
         await self.bot.change_presence(activity=activity)
 
-    @status.after_loop
-    async def after_my_task(self):
-        if self.status.failed():
-            import traceback
-            traceback.print_exc()
+    @status.before_loop
+    async def wait_for_ready_status(self):
+        await self.bot.wait_until_ready()
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member, before, after):
@@ -53,11 +53,29 @@ class Listeners(commands.Cog):
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
         # ask the owner what features they want
-        # load db get all members
-        embed = discord.Embed(title=':white_check_mark: Server added!',
-                              description='Thank you for adding me to your server!', color=discord.Colour.green())
-        embed.set_footer(text=f'Joined at: {datetime.now().strftime("%c")}')
-        await guild.owner.send(embed=embed)
+        blacklisted = False
+        try:
+            blacklisted = self.bot.pool.fetchval('''FROM $1 SELECT blacklist;''', guild.id)
+        except asyncpg.FDWTableNotFoundError:
+            self.bot.pool.excute(
+                '''CREATE TABLE ($1) (
+                prefixes ANYARRAY,
+                colour_n INT,
+                colour_g INT,
+                colour_b INT,
+                economy ANYARRAY,  
+                blacklisted BOOL,  
+                prefixes ANYARRAY,  
+                member role list 
+                id ANYARRAY,  
+                );''', guild.id)
+        if blacklisted:
+            return await guild.leave()
+        else:
+            embed = discord.Embed(title=':white_check_mark: Server added!',
+                                  description='Thank you for adding me to your server!', color=discord.Colour.green())
+            embed.set_footer(text=f'Joined at: {datetime.now().strftime("%c")}')
+            await guild.owner.send(embed=embed)
 
     @commands.Cog.listener()
     async def on_guild_leave(self, guild):
@@ -104,7 +122,7 @@ class Listeners(commands.Cog):
         embed = discord.Embed(title=user,
                               description=f'{user.name} - {user.id} was banned from {guild.name} - {guild.id}',
                               color=discord.Color.red())
-        embed.set_footer(text=f'ID: {user.author.id} • {datetime.now().strftime("%c")}', icon_url=user.avatar_url)
+        embed.set_footer(text=f'ID: {user.id} • {datetime.now().strftime("%c")}', icon_url=user.avatar_url)
         await guild.system_channel.send(embed=embed)
 
     @commands.Cog.listener()
@@ -112,7 +130,7 @@ class Listeners(commands.Cog):
         embed = discord.Embed(title=user,
                               description=f'{user.name}-{user.id} was kicked from {guild.name}-{guild.id}',
                               color=discord.Color.red())
-        embed.set_footer(text=f'ID: {user.author.id} • {datetime.now().strftime("%c")}', icon_url=user.avatar_url)
+        embed.set_footer(text=f'ID: {user.id} • {datetime.now().strftime("%c")}', icon_url=user.avatar_url)
         await guild.system_channel.send(embed=embed)
 
     @commands.Cog.listener()
@@ -128,7 +146,7 @@ class Listeners(commands.Cog):
     async def on_raw_message_delete(self, payload):
         message = payload.cached_message
         if message is None:
-            channel = self.bot.get_guild(payload.channel_id)
+            channel = self.bot.get_channel(payload.channel_id)
             embed = discord.Embed(description=f'**Message deleted in: {channel.mention}**', color=discord.Color.red())
             embed.set_footer(text=f'{datetime.now().strftime("%c")}')
             return await channel.guild.system_channel.send(embed=embed)
@@ -236,23 +254,6 @@ class Listeners(commands.Cog):
             return
         await before.guild.system_channel.send(embed=embed)
 
-        '''
-    @commands.Cog.listener()
-    async def on_message(self, message):  # checking if someone someone said a blacklisted word TODO ADD A blacklisting command
-        if message.author == self.bot.user:
-            return
-        blacklist_words = message.guild.id['blacklist words']
-        if blacklist_words:
-            split_message = re.split("(?:(?:[^a-zA-Z]+')|(?:'[^a-zA-Z]+))|(?:[^a-zA-Z']+)",
-                                     str(message.content).lower())
-            if any(word in split_message for word in blacklist_words):
-                await message.delete()
-                await message.author.send(f'{message.author.mention} Your message "{message.content}" '
-                                          f'has been removed as it contains a blacklisted word!',
-                                          delete_after=5)
-                await message.guild.system_channel.send(f'{message.author}, just said {message.content}, '
-                                                        f'in {str(message.channel)}')'''
-
     # error handler ----------------------------------------------------------------------------------------------------
 
     @commands.Cog.listener()
@@ -261,7 +262,7 @@ class Listeners(commands.Cog):
         if hasattr(ctx.command, 'on_error'):
             return
 
-        ignored = (commands.CommandNotFound, commands.UserInputError, commands.CheckFailure)
+        ignored = (commands.CommandNotFound, commands.CheckFailure)
         if isinstance(error, ignored):
             return
         elif isinstance(error, commands.MissingRequiredArgument):
@@ -298,10 +299,30 @@ class Listeners(commands.Cog):
             title = 'Unspecified error: please hang tight, whilst I try take a look at this'
 
         embed = discord.Embed(title=f':warning: **{title}**', color=discord.Colour.red())
-        embed.add_field(name='Error message:', value=f'```py\n{error.__class__.__name__}: {error}\n```')
+        embed.add_field(name='Error message:', value=f'```py\n{type(error).__name__}: {error}\n```')
         await ctx.send(embed=embed, delete_after=180)
         traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
+        self.bot.log.warning(error)
+        raise error
 
 
 def setup(bot):
     bot.add_cog(Listeners(bot))
+
+
+"""    @commands.Cog.listener()
+    async def on_message(self, message):  # checking if someone someone said a blacklisted word TODO add A blacklisting command
+        if message.author == self.bot.user:
+            return
+        blacklist_words = self.bot.blacklisted[message.guild.id]['blacklist words']
+        if blacklist_words:
+            split_message = re.split("(?:(?:[^a-zA-Z0-9]+')|(?:'[^a-zA-Z0-9]+))|(?:[^a-zA-Z0-9]+)",
+                                     str(message.content).lower())
+            rejoined = ''.join(split_message)
+            if re.search("(%s)+" % '|'.join([blacklist_words]), rejoined):
+                await message.delete()
+                await message.author.send(f'{message.author.mention} Your message \"{message.content}\" '
+                                          f'has been removed as it contains a blacklisted word!',
+                                          delete_after=5)
+                await message.guild.system_channel.send(f'{message.author}, just said {message.content}, '
+                                                        f'in {message.channel.mention}')"""

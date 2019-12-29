@@ -15,6 +15,9 @@ class Api(commands.Cog):
         self.bot = bot
         self.animals = ['cat', 'dog', 'koala', 'fox', 'birb', 'red_panda', 'panda', 'racoon', 'kangaroo']
 
+    async def cog_check(self, ctx):
+        return True
+
     @commands.command(aliases=['kitty', 'pussy'])
     async def cat(self, ctx, fact=None):
         """Get an image and optionally a fact about a cat"""

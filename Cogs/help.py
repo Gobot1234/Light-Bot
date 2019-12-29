@@ -1,11 +1,13 @@
 from asyncio import TimeoutError
+from inspect import signature, getsource
 from itertools import islice
-
+from re import split
 from psutil import virtual_memory, cpu_percent, Process
 from humanize import naturalsize
 from platform import python_version
 from datetime import datetime, timedelta, timezone
 import pygit2
+from random import choice
 
 # import asyncpg
 import discord
@@ -30,18 +32,19 @@ class HelpCommand(commands.HelpCommand):
         if not command.signature and not command.parent:  # checking if it has no args and isn't a subcommand
             return f'`{self.clean_prefix}{command.name}`'
         if command.signature and not command.parent:  # checking if it has args and isn't a subcommand
-            return f'`{self.clean_prefix}{command.name}` `{command.signature}`'
+            sig = '` `'.join(split(r'\B ', split(r'\(self, ctx, (.*?)\):', getsource(command.callback))[1]))
+            return '`{}{}` `{}`'.format(self.clean_prefix, command.name, sig)
         if not command.signature and command.parent:  # checking if it has no args and is a subcommand
             return f'`{command.name}`'
         else:  # else assume it has args a signature and is a subcommand
-            return f'`{command.name}` `{command.signature}`'
+            return '`{}` `{}`'.format(command.name, '`, `'.join(split(r'\B ', command.signature)))
 
     def get_command_aliases(self, command):  # this is a custom written method along with all the others below this
         """Method to return a commands aliases"""
         if not command.aliases:  # check if it has any aliases
             return ''
         else:
-            return f'command aliases are [`{"` | `".join([alias for alias in command.aliases])}`]'
+            return f'command aliases are [`{"` | `".join(command.aliases)}`]'
 
     def get_command_description(self, command):
         """Method to return a commands short doc/brief"""
@@ -73,6 +76,7 @@ class HelpCommand(commands.HelpCommand):
 
         def check(reaction, user):  # check who is reacting to the message
             return user == ctx.author and help_embed.id == reaction.message.id
+
         embed = await self.bot_help_paginator(page, cogs)
         help_embed = await ctx.send(embed=embed)  # sends the first help page
 
@@ -154,7 +158,8 @@ class HelpCommand(commands.HelpCommand):
     async def bot_help_paginator(self, page: int, cogs):
         ctx = self.context
         bot = ctx.bot
-        all_commands = [command for command in await self.filter_commands(bot.commands)]  # filter the commands the user can use
+        all_commands = [command for command in
+                        await self.filter_commands(bot.commands)]  # filter the commands the user can use
         cog = bot.get_cog(cogs[page])  # get the current cog
 
         embed = discord.Embed(title=f'Help with {cog.qualified_name} ({len(all_commands)} commands)',
@@ -228,7 +233,7 @@ class HelpCommand(commands.HelpCommand):
                 aliases = self.get_command_aliases(command)
 
                 if command.parent:
-                    embed.add_field(name=f'`╚╡`{signature}', value=description, inline=False)
+                    embed.add_field(name=f'╚╡{signature}', value=description, inline=False)
                 else:
                     embed.add_field(name=f'{signature} {aliases}', value=description, inline=False)
         embed.set_footer(text=f'Use "{self.clean_prefix}help <command>" for more info on a command.')
@@ -262,7 +267,7 @@ class Help(commands.Cog):
     async def cog_check(self, ctx):
         return True
 
-    async def get_uptime(self):
+    def get_uptime(self):
         delta_uptime = datetime.utcnow() - self.bot.launch_time
         hours, remainder = divmod(int(delta_uptime.total_seconds()), 3600)
         minutes, seconds = divmod(remainder, 60)
@@ -286,28 +291,44 @@ class Help(commands.Cog):
 
     @commands.command()
     async def stats(self, ctx):
-        uptime = await self.get_uptime()
         memory_usage = self.process.memory_full_info().uss
         rawram = virtual_memory()
-
-        embed = discord.Embed(title=f'**{self.bot.user.name}** - Official Bot Server Invite & System information',
+        embed = discord.Embed(title=f'**{self.bot.user.name}** - Official Bot Server Invite & Bot information',
                               url='https://discord.gg/h8chCgW',
                               description=f'**Commands loaded & Cogs loaded:** `{len(self.bot.commands)}` commands loaded, '
-                                          f'`{len(self.bot.cogs)}` cogs loaded :gear:\n'
-                                          f'**Latest Changes:**\n{self.get_last_commits()}',
+                                          f'`{len(self.bot.cogs)}` cogs loaded :gear:\n\n'
+                                          f'**Latest Changes:**\n{self.get_last_commits()}\n',
                               colour=discord.Colour.blurple(), timestamp=datetime.now())
-        owner = self.bot.get_user(self.bot.owner_id)
-        embed.set_author(name=str(owner), icon_url=owner.avatar_url)
+        embed.set_author(name=str(self.bot.owner), icon_url=self.bot.owner.avatar_url)
 
         # statistics
+        total_bots = 0
         total_members = 0
         total_online = 0
-        offline = discord.Status.offline
-        for member in self.bot.get_all_members():
-            total_members += 1
-            if member.status is not offline:
-                total_online += 1
+        total_idle = 0
+        total_dnd = 0
+        total_offline = 0
 
+        online = discord.Status.online
+        idle = discord.Status.idle
+        dnd = discord.Status.dnd
+        offline = discord.Status.offline
+
+        for member in self.bot.get_all_members():
+            if member.bot:
+                total_bots += 1
+            elif member.status is online:
+                total_online += 1
+                total_members += 1
+            elif member.status is idle:
+                total_idle += 1
+                total_members += 1
+            elif member.status is dnd:
+                total_dnd += 1
+                total_members += 1
+            elif member.status is offline:
+                total_offline += 1
+                total_members += 1
         total_unique = len(self.bot.users)
 
         text = 0
@@ -320,26 +341,30 @@ class Help(commands.Cog):
                     text += 1
                 elif isinstance(channel, discord.VoiceChannel):
                     voice += 1
-
-        embed.add_field(name='Members', value=f'{total_members} total\n{total_unique} unique\n{total_online} unique online')
-        embed.add_field(name='Channels', value=f'{text + voice} total\n{text} text\n{voice} voice')
-        embed.add_field(name='Guilds', value=guilds)
-
+        embed.add_field(name='Members', value=f'`{total_members}` <:discord:626486432793493540> total\n'
+                                              f'`{total_unique}`:star: unique'
+                                              f'\n`{total_bots}` :robot: bots')
+        embed.add_field(name='Statuses', value=f'`{total_online}` <:OnlineStatus:659012420735467540> online, '
+                                               f'`{total_idle}` <:IdleStatus:659012420672421888> idle,\n'
+                                               f'`{total_dnd}` <:DNDStatus:659012419296952350> dnd, '
+                                               f'`{total_offline}` <:OfflineStatus:659012420273963008> offline.')
+        embed.add_field(name='Servers & Channels',
+                        value=f'{guilds} total servers\n{text + voice} total channels\n{text} text chanels\n{voice} voice channels')
+        # pc info
         embed.add_field(name="<:compram:622622385182474254> RAM Usage",
                         value=f'Using `{naturalsize(rawram[3])}` / `{naturalsize(rawram[0])}` `{round(rawram[3] / rawram[0] * 100, 2)}`% '
                               f'of your physical memory and `{naturalsize(memory_usage)}` of which unique to this process.')
-        embed.add_field(name="<:cpu:622621524418887680> CPU Usage", value=f'`{cpu_percent()}`% used')
-        embed.add_field(name=f'{self.bot.user.name} has been online for:', value=uptime)
+        embed.add_field(name='<:cpu:622621524418887680> CPU Usage',
+                        value=f'`{cpu_percent()}`% used'
+                              f'\n\n:arrow_up: Uptime\n {self.bot.user.mention} has been online for: {self.get_uptime()}')
         embed.add_field(name=':exclamation:Command prefix',
-                        value=f'Your command prefix is `{prefix(ctx)}`. Type {prefix(ctx)}help to list the '
+                        value=f'Your command prefix is `{ctx.prefix}`. Type {ctx.prefix}help to list the '
                               f'commands you can use')
-        embed.add_field(name='<:dpy:622794044547792926> Discord.py Version',
-                        value=f'`{discord.__version__}` works with versions 1.1+ of Discord.py and versions 3.5.4+ of Python')
-        embed.add_field(name='<:python:622621989474926622> Python Version',
-                        value=f'`{python_version()}` works with versions 3.6+ (uses f-strings)')
-
+        embed.add_field(name='Version info:',
+                        value=f'<:dpy:622794044547792926>: `{discord.__version__}`, '
+                              f'<:python:622621989474926622>: `{python_version()}`', inline=False)
         embed.set_footer(text="If you need any help join the help server of this code discord.gg",
-                         icon_url='https://cdn.discordapp.com/avatars/340869611903909888/9e3719ecc71ebfb3612ceccf02da4c7a.webp?size=1024')
+                         icon_url=ctx.author.avatar_url)
         await ctx.send(embed=embed)
 
     @commands.group(invoke_without_subcommand=True)
@@ -365,6 +390,22 @@ class Help(commands.Cog):
             # remove from db
             # remove from cached dict
             await ctx.send(f'Prefix successfully changed to `{prefix}`')
+
+    @commands.command(name='8ball')
+    async def _8ball(self, ctx, *, question):
+        responses = ['no u',
+                     ' get the fu** out of my room im playing mc',
+                     'just no',
+                     'my answer is no and die',
+                     'no frikking dumb questions!',
+                     'stap',
+                     'yes!',
+                     'yes?! ',
+                     'why are you so dumb??',
+                     'certainly yes!',
+                     'ya like jazz? I do!',
+                     'yes yes yes']
+        await ctx.send(f'Question: {ctx.message.clean_content.split(" ", 1)[1]}\nAnswer: {choice(responses)}')
 
 
 def setup(bot):

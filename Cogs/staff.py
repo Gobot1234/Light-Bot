@@ -1,6 +1,8 @@
 import asyncio
 import discord
 from datetime import datetime, timedelta
+
+import typing
 from psutil import Process
 
 from typing import Optional
@@ -142,12 +144,11 @@ class Staff(commands.Cog):
 
     @commands.command()
     @commands.has_permissions(manage_roles=True)
-    async def mute(self, ctx, members: commands.Greedy[discord.Member], *,
-                   until: UserFriendlyTime(commands.clean_content)):
+    async def mute(self, ctx, members: commands.Greedy[discord.Member], *, until: UserFriendlyTime(commands.clean_content)):
         """Mutes a user for a specific time"""
         muted = discord.utils.get(ctx.guild.roles, name='Muted')
         if muted is None:
-            await ctx.guild.create_role(name='Muted', colour=0x2f3136, reason='Created automatically as none was found')
+            muted = await ctx.guild.create_role(name='Muted', colour=0x2f3136, reason='Created automatically as no muted role was found')
         for member in members:
             if member == ctx.author or member.id == self.bot.user.id:
                 return await ctx.send('Why would you do that???', delete_after=3)
@@ -178,8 +179,7 @@ class Staff(commands.Cog):
     @commands.command()
     @commands.has_permissions(ban_members=True)
     @commands.bot_has_permissions(ban_members=True)
-    async def ban(self, ctx, members: commands.Greedy[discord.Member], reason: Optional[str] = 'None given',
-                  delete_days: Optional[int] = 0):
+    async def ban(self, ctx, members: commands.Greedy[discord.Member], reason: Optional[str] = 'None given', delete_days: Optional[int] = 0):
         """Ban users you need to be able to normally ban users to use this"""
         if ctx.author in members:
             return await ctx.channel.send('You cannot ban yourself, well you can try')
@@ -194,25 +194,78 @@ class Staff(commands.Cog):
     @commands.command()
     @commands.has_permissions(ban_members=True)
     @commands.bot_has_permissions(ban_members=True)
-    async def unban(self, ctx, users: commands.Greedy[discord.User]):
-        """Unban a user you need to be able to normally ban users to use this"""
+    async def unban(self, ctx, users: commands.Greedy[typing.Union[discord.User, int, str]]):
+        """
+        Unban a user you need to be able to normally ban users to use this commmand.
+
+        You can use either an ID or a name without the tag eg.
+        `{prefix}unban Gobot1234`
+        or
+        `{prefix}unban 340869611903909888`
+        """
+        bans = await ctx.guild.bans()
         for user in users:
-            try:
-                await ctx.guild.unban(user)
-            except:
-                await ctx.send(f'Member {user} wasn\'t found')
-            else:
-                await ctx.send(f'{user} has been unbanned!')
+            if isinstance(user, discord.User):  # check if the user is still cached or in another server
                 try:
-                    await user.send(f'You have been unbanned from {ctx.guild}, by {ctx.author}')
-                except discord.Forbidden:
-                    pass
+                    await ctx.guild.unban(user)
+                except discord.NotFound:
+                    raise commands.UserInputError(f'User {user} not found? Double check your ID or name '
+                                                  f'again or perhaps they aren\'t banned')
+
+                else:
+                    await ctx.send(f'{user.mention} has been unbanned!')
+                    try:
+                        await user.send(f'You have been unbanned from {ctx.guild}, by {ctx.author}')
+                    except discord.Forbidden:
+                        pass
+            else:
+                if user.isdigit():  # check if its an id
+                    for reason, banned_user in bans:
+                        if banned_user.id == user:
+                            await ctx.guild.unban(banned_user)
+                            await ctx.send(f'<@{banned_user.mention}> has been unbanned!')
+                            try:
+                                await banned_user.send(f'You have been unbanned from {ctx.guild}, by {ctx.author}')
+                            except discord.Forbidden:
+                                pass
+                            break
+                    raise commands.UserInputError(f'User {user} not found? Double check your ID or name '
+                                                  f'again or perhaps they aren\'t banned')
+                else:
+                    for reason, banned_user in bans:
+                        if banned_user.name == user:
+                            await ctx.guild.unban(banned_user)
+                            await ctx.send(f'{banned_user.mention} has been unbanned!')
+                            try:
+                                await banned_user.send(f'You have been unbanned from {ctx.guild}, by {ctx.author}')
+                            except discord.Forbidden:
+                                pass
+                            break
+                    raise commands.UserInputError(f'User {user} not found? Double check your ID or name '
+                                                  f'again or perhaps they aren\'t banned')
+
+    @commands.command()
+    @commands.has_permissions(kick_members=True)
+    @commands.bot_has_permissions(ban_members=True)
+    async def softban(self, ctx, members: commands.Greedy[discord.Member], *, reason: str = 'None given'):
+        """Softban a user - ban & then unban them straight after requires kick members permission"""
+        if ctx.author in members:
+            return await ctx.channel.send('You cannot ban yourself, well you can try')
+        for member in members:
+            try:
+                await member.send(f'You have been softbanned from {ctx.guild.name} - '
+                                  f'you may rejoin but be warned you may be on a warning for {reason}')
+            except discord.Forbidden:
+                pass
+            await member.ban(reason=reason)
+            await ctx.guild.unban(member)
+            await ctx.send(f'{member.mention} has been softbanned!')
 
     @commands.command()
     @commands.has_permissions(kick_members=True)
     @commands.bot_has_permissions(kick_members=True)
     async def kick(self, ctx, members: commands.Greedy[discord.Member], *, reason: str = 'None Given'):
-        """Ban a user you need to be able to normally ban users to use this"""
+        """Kick a user you need to be able to normally ban users to use this"""
         if ctx.author in members:
             return await ctx.channel.send('You cannot kick yourself, well you can try')
         for member in members:
