@@ -63,7 +63,7 @@ def run_bot():
 
 if __name__ == '__main__':
     bot = EpicBot()
-    bot.log = getLogger()
+    bot.log = getLogger('Light Bot')
     bot.log.setLevel(DEBUG)
     handler = FileHandler(filename=f'out--{datetime.now().strftime("%d-%m-%Y-%H:%S")}.log', encoding='utf-8', mode='w')
     handler.setFormatter(Formatter('%(asctime)s :  %(levelname)s : %(name)s | %(message)s'))
