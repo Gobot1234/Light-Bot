@@ -233,7 +233,7 @@ class Owner(commands.Cog):
             await ctx.message.add_reaction(':goodcross:626829085682827266')
         else:
             await ctx.message.add_reaction(':tick:626829044134182923')
-        out = buttons.Paginator(title=f'GitHub push output', colour=discord.Colour.blupurple(), embed=True, timeout=90,
+        out = buttons.Paginator(title=f'GitHub push output', colour=discord.Colour.blurple(), embed=True, timeout=90,
                                 entries=[f'**Commit:** ```bash\n{commit}```', f'**Push:** ```bash\n{push}```'])
         await out.start(ctx)
 
