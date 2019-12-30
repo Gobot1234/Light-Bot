@@ -12,7 +12,7 @@ import discord
 from discord.ext import commands, tasks
 
 from Utils.checks import prefix, colour_good, colour_neutral, colour_bad
-from Utils.formats import format_exec
+from Utils.formats import format_exec, format_error
 
 
 class Listeners(commands.Cog):
@@ -301,9 +301,7 @@ class Listeners(commands.Cog):
         embed = discord.Embed(title=f':warning: **{title}**', color=discord.Colour.red())
         embed.add_field(name='Error message:', value=f'```py\n{type(error).__name__}: {error}\n```')
         await ctx.send(embed=embed, delete_after=180)
-        traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
-        self.bot.log.warning(error)
-        raise error
+        self.bot.log.warning(format_error(error))
 
 
 def setup(bot):

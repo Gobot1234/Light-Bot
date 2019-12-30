@@ -30,6 +30,25 @@ class Owner(commands.Cog):
         info = await self.bot.application_info()
         self.bot.owner = info.owner
 
+        try:
+            channel = int(open('channel.txt', 'r').read())
+            await self.bot.get_channel(channel).purge(limit=2)
+            await self.bot.get_channel(channel).send('Finished restarting...', delete_after=5)
+            remove('channel.txt')
+        except FileNotFoundError:
+            pass
+        else:
+            if channel is not None:
+                async for m in channel.history(limit=5):
+                    if m.author == self.bot.user:
+                        await m.delete()
+                    if m.author == self.bot.owner and m.content == f'{self.bot.prefix}logout' or m.content == f'{self.bot.prefix}restart':
+                        try:
+                            await m.delete()
+                        except discord.Forbidden:
+                            pass
+                await channel.send('Finished restarting...', delete_after=10)
+
     async def cog_check(self, ctx):
         if ctx.author.id == ctx.bot.owner_id:
             return True
@@ -43,7 +62,7 @@ class Owner(commands.Cog):
         print_exc(error)
         raise error
 
-    async def cleanup_code(self, content):
+    def cleanup_code(self, content):
         """Automatically removes code blocks from the code."""
         # remove ```py\n```
         if content.startswith('```') and content.endswith('```'):
@@ -54,19 +73,14 @@ class Owner(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        try:
-            channel = int(open('channel.txt', 'r').read())
-            await self.bot.get_channel(channel).purge(limit=2)
-            await self.bot.get_channel(channel).send('Finished restarting...', delete_after=5)
-            remove('channel.txt')
-        except FileNotFoundError:
-            pass
         if self.first:
             await self.a__init__()
             self.first = False
-        print(f'\n\nLogged in as: {self.bot.user.name} - {self.bot.user.id}\nVersion: {discord.__version__} of Discord.py\n')
+        print(f'\n\nLogged in as: {self.bot.user.name} - {self.bot.user.id}\n'
+              f'Version: {discord.__version__} of Discord.py\nVersion: V.{__version__} of Light Bot')
         print(self.bot.user.name, 'is fully loaded\nSuccessfully logged in and booted...!')
-        self.bot.log.info(f'\n\nLogged in as: {self.bot.user.name} - {self.bot.user.id}\nVersion: {discord.__version__} of Discord.py\n')
+        self.bot.log.info(f'\n\nLogged in as: {self.bot.user.name} - {self.bot.user.id}\n'
+                          f'Version: {discord.__version__} of Discord.py\nVersion: V.{__version__} of Light Bot')
         self.bot.log.info(self.bot.user.name, 'is fully loaded\nSuccessfully logged in and booted...!')
 
     @commands.command(aliases=['r'])
@@ -129,6 +143,7 @@ class Owner(commands.Cog):
           - `bot`: the bot instance
           - `commands`: the discord.ext.commands module
           - `ctx`: the invocation context
+          - `_`: the last result
 
         eg. `{prefix}eval` ```py
         await ctx.send('lol')```
@@ -139,6 +154,7 @@ class Owner(commands.Cog):
                 'ctx': ctx,
                 'discord': discord,
                 'commands': commands,
+                '_': self._last_result,
                 'self': self,
             }
 
@@ -207,6 +223,7 @@ class Owner(commands.Cog):
     @commands.is_owner()
     async def restart(self, ctx):
         """Used to restart the bot"""
+        await ctx.message.add_reaction('<a:loading:661210169870516225>')
         await ctx.send(f'**Restarting the Bot** {ctx.author.mention}')
         open('channel.txt', 'w+').write(str(ctx.channel.id))
         await self.bot.close()
@@ -225,7 +242,7 @@ class Owner(commands.Cog):
     @git.command()
     async def push(self, ctx, version=f'V.{__version__}', *, commit_msg='None given'):
         """Push changes to the GitHub repo"""
-        await ctx.message.add_reaction('\U000023f3')
+        await ctx.message.add_reaction('<a:loading:661210169870516225>')
         add = await self.bot.loop.run_in_executor(None, getoutput, 'git add .')
         commit = await self.bot.loop.run_in_executor(None, getoutput, f'git commit -m "{version}" -m "{commit_msg}"')
         push = await self.bot.loop.run_in_executor(None, getoutput, 'git push')
@@ -240,12 +257,12 @@ class Owner(commands.Cog):
     @git.command()
     async def pull(self, ctx):
         """Pull from the GitHub repo"""
-        await ctx.message.add_reaction('\U000023f3')
+        await ctx.message.add_reaction('<a:loading:661210169870516225>')
         reset = await self.bot.loop.run_in_executor(None, getoutput, 'git reset --hard HEAD')
         pull = await self.bot.loop.run_in_executor(None, getoutput, 'git pull')
         await ctx.message.add_reaction(':tick:626829044134182923')
         out = buttons.Paginator(title=f'GitHub pull output', colour=self.bot.color, embed=True, timeout=90,
-                                entries=[f'**Reset:** ```bash\n{reset}```', f'**Pull:** ```bash\n{pull}```'])
+                                entries=[f'**Reset:** ```js\n{reset}```', f'**Pull:** ```js\n{pull}```'])
         await out.start(ctx)
 
 
