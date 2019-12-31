@@ -6,7 +6,7 @@ import typing
 from psutil import Process
 
 from typing import Optional
-from discord.ext import commands
+from discord.ext import commands, buttons
 from collections import Counter
 
 from Utils.time import UserFriendlyTime, human_timedelta
@@ -30,7 +30,7 @@ class Staff(commands.Cog):
         return ctx.author.guild_permissions.ban_members or ctx.author.guild_permissions.kick_members \
                or ctx.author.guild_permissions.manage_roles or ctx.author.permissions_in(ctx.channel).manage_messages
 
-    async def unmute_timer(self, time: int, member, ctx):
+    async def unmute_timer(self, ctx, member, time: float):
         await asyncio.sleep(time)
         await member.remove_roles(discord.utils.get(member.guild.roles, name='Muted'))
         await ctx.send(f'Un-muted member {member.display_name}')
@@ -138,29 +138,52 @@ class Staff(commands.Cog):
         If a search number is specified, it searches that many messages to delete.
         You must have Manage Messages permission to use this.
         """
-        await self.do_removal(ctx, search, lambda e: e.author == ctx.me)
+        await self.do_removal(ctx, search, lambda e: e.author == ctx.guild.me)
 
     #  mute ------------------------------------------------------------------------------------------------------------
 
-    @commands.command()
+    @commands.group(invoke_without_command=True, aliases=['muted'])
     @commands.has_permissions(manage_roles=True)
     async def mute(self, ctx, members: commands.Greedy[discord.Member], *, until: UserFriendlyTime(commands.clean_content)):
-        """Mutes a user for a specific time"""
+        """
+        Mute a user for a specific time
+
+        The input can be any direct date (e.g. YYYY-MM-DD) or a human
+        readable offset. Examples:
+
+        - "next thursday at 3pm they are spamming"
+        - "they mentioned @​everyone tomorrow"
+        - "in 3 days mention spamming"
+        - "2d none needed"
+
+        Times are in UTC.s
+        """
         muted = discord.utils.get(ctx.guild.roles, name='Muted')
         if muted is None:
-            muted = await ctx.guild.create_role(name='Muted', colour=0x2f3136, reason='Created automatically as no muted role was found')
+            muted = await ctx.guild.create_role(name='Muted', colour=0x2f3136,
+                                                reason='Created automatically as no muted role was found')
         for member in members:
-            if member == ctx.author or member.id == self.bot.user.id:
+            if member == (ctx.author or self.bot.user):
                 return await ctx.send('Why would you do that???', delete_after=3)
-            bot_delta = round(timedelta.total_seconds(until.dt - datetime.utcnow()))
+            bot_delta = timedelta.total_seconds(until.dt - datetime.utcnow())
             human_delta = human_timedelta(until.dt)
             await ctx.send(
                 f'Muted `{member.display_name}`, for reason `{until.arg}`, they will be un-muted in `{human_delta}`')
             await member.add_roles(muted, reason=until.arg)
             for channel in ctx.guild.channels:
-                await channel.set_permissions(muted, read_messages=True, send_messages=False,
-                                              add_reactions=False, remove_reactions=False)
-            await self.unmute_timer(bot_delta, member, ctx)
+                await channel.set_permissions(muted, read_messages=True, send_messages=False, add_reactions=False)
+            await self.unmute_timer(ctx, member, bot_delta)
+
+    @mute.command(name='list')
+    async def mutelist(self, ctx):
+        """Get a list of the currently muted members the reason for their mute and how long they will be muted for"""
+        # todo add time until they are unmuted and sort by that along with the reason
+        muted = discord.utils.get(ctx.guild.roles, name='Muted')
+        muted_list = [member for member in ctx.guild.members if muted in member.roles]
+        paginator = buttons.Paginator(title=f'{len(muted_list)} Muted member{"s" if len(muted_list) > 1 else ""}',
+                                      colour=discord.Colour.blurple(), length=5,
+                                      entries=[f'{i}. {e}' for i, e in enumerate(muted_list, start=1)])
+        await paginator.start(ctx)
 
     @commands.command()
     @commands.has_permissions(manage_roles=True)
@@ -196,10 +219,10 @@ class Staff(commands.Cog):
     @commands.bot_has_permissions(ban_members=True)
     async def unban(self, ctx, users: commands.Greedy[typing.Union[discord.User, int, str]]):
         """
-        Unban a user you need to be able to normally ban users to use this commmand.
+        Unban a user you need to be able to normally ban users to use this command.
 
-        You can use either an ID or a name without the tag eg.
-        `{prefix}unban Gobot1234`
+        You can use either an ID or a name with the discriminator eg.
+        `{prefix}unban Gobot1234#2435`
         or
         `{prefix}unban 340869611903909888`
         """
@@ -219,21 +242,17 @@ class Staff(commands.Cog):
                     except discord.Forbidden:
                         pass
             else:
-                if user.isdigit():  # check if its an id
-                    for reason, banned_user in bans:
-                        if banned_user.id == user:
-                            await ctx.guild.unban(banned_user)
-                            await ctx.send(f'<@{banned_user.mention}> has been unbanned!')
-                            try:
-                                await banned_user.send(f'You have been unbanned from {ctx.guild}, by {ctx.author}')
-                            except discord.Forbidden:
-                                pass
-                            break
-                    raise commands.UserInputError(f'User {user} not found? Double check your ID or name '
-                                                  f'again or perhaps they aren\'t banned')
+                if user.isdigit():  # check if its an id makes things simpler
+                    try:
+                        await ctx.guild.unban(discord.Object(user))
+                    except discord.Forbidden:
+                        raise commands.UserInputError(f'User {user} not found? Double check your ID or name '
+                                                      f'again or perhaps they aren\'t banned')
+                    else:
+                        await ctx.send(f'<@{user}> has been unbanned!')
                 else:
                     for reason, banned_user in bans:
-                        if banned_user.name == user:
+                        if banned_user == user:
                             await ctx.guild.unban(banned_user)
                             await ctx.send(f'{banned_user.mention} has been unbanned!')
                             try:

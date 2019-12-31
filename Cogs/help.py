@@ -1,5 +1,4 @@
 from asyncio import TimeoutError
-from inspect import signature, getsource
 from itertools import islice
 from re import split
 from psutil import virtual_memory, cpu_percent, Process
@@ -8,6 +7,7 @@ from platform import python_version
 from datetime import datetime, timedelta, timezone
 import pygit2
 from random import choice
+from collections import Counter
 
 # import asyncpg
 import discord
@@ -22,38 +22,39 @@ class HelpCommand(commands.HelpCommand):
     """The custom help command class for the bot"""
 
     def __init__(self):
-        super().__init__(command_attrs={
+        super().__init__(verify_checks=True, command_attrs={
             'help': 'Shows help about the bot, a command, or a cog',
             'cooldown': commands.Cooldown(1, 3.0, commands.BucketType.member),
         })
 
-    def get_command_signature(self, command):
+    def get_command_signature(self, command) -> str:
         """Method to return a commands name and signature"""
         if not command.signature and not command.parent:  # checking if it has no args and isn't a subcommand
             return f'`{self.clean_prefix}{command.name}`'
         if command.signature and not command.parent:  # checking if it has args and isn't a subcommand
-            sig = '` `'.join(split(r'\B ', split(r'\(self, ctx, (.*?)\):', getsource(command.callback))[1]))
-            return '`{}{}` `{}`'.format(self.clean_prefix, command.name, sig)
+            sig = '` `'.join(split(r'\B ', command.signature))
+            return f'`{self.clean_prefix}{command.name}` `{sig}`'
         if not command.signature and command.parent:  # checking if it has no args and is a subcommand
             return f'`{command.name}`'
         else:  # else assume it has args a signature and is a subcommand
             return '`{}` `{}`'.format(command.name, '`, `'.join(split(r'\B ', command.signature)))
 
-    def get_command_aliases(self, command):  # this is a custom written method along with all the others below this
+    def get_command_aliases(self,
+                            command) -> str:  # this is a custom written method along with all the others below this
         """Method to return a commands aliases"""
         if not command.aliases:  # check if it has any aliases
             return ''
         else:
             return f'command aliases are [`{"` | `".join(command.aliases)}`]'
 
-    def get_command_description(self, command):
+    def get_command_description(self, command) -> str:
         """Method to return a commands short doc/brief"""
         if not command.short_doc:  # check if it has any brief
             return 'There is no documentation for this command currently'
         else:
             return command.short_doc.format(prefix=self.clean_prefix)
 
-    def get_command_help(self, command):
+    def get_command_help(self, command) -> str:
         """Method to return a commands full description/doc string"""
         if not command.help:  # check if it has any brief or doc string
             return 'There is no documentation for this command currently'
@@ -127,11 +128,10 @@ class HelpCommand(commands.HelpCommand):
                     await help_embed.edit(embed=embed)
 
                 elif str(reaction.emoji) == 'ℹ':  # show information help
-                    all_cogs = '`, `'.join([cog for cog in cogs])
                     embed = discord.Embed(title=f'Help with {bot.user.name}\'s commands', description=bot.description,
-                                          color=discord.Colour.purple())
+                                          color=discord.Colour.blurple())
                     embed.add_field(
-                        name=f'Currently there are {len(cogs)} cogs loaded, which includes (`{all_cogs}`) :gear:',
+                        name=f'Currently there are {len(cogs)} cogs loaded, which includes (`{"`, `".join(cogs)}`) :gear:',
                         value='`<...>` indicates a required argument,\n`[...]` indicates an optional argument.\n\n'
                               '**Don\'t however type these around your argument**')
                     embed.add_field(name='What do the emojis do:',
@@ -155,7 +155,7 @@ class HelpCommand(commands.HelpCommand):
         for reaction in reactions:
             await message.add_reaction(reaction)
 
-    async def bot_help_paginator(self, page: int, cogs):
+    async def bot_help_paginator(self, page: int, cogs) -> discord.Embed:
         ctx = self.context
         bot = ctx.bot
         all_commands = [command for command in
@@ -190,7 +190,7 @@ class HelpCommand(commands.HelpCommand):
             aliases = self.get_command_aliases(c)
             description = self.get_command_description(c)
             if c.parent:
-                embed.add_field(name=f'`╚╡`{signature}', value=description)
+                embed.add_field(name=f'**╚╡**{signature}', value=description)
             else:
                 embed.add_field(name=f'{signature} {aliases}',
                                 value=description, inline=False)
@@ -211,7 +211,7 @@ class HelpCommand(commands.HelpCommand):
             aliases = self.get_command_aliases(command)
 
             if command.parent:
-                embed.add_field(name=f'`╚╡`{signature}', value=description, inline=False)
+                embed.add_field(name=f'**╚╡**{signature}', value=description, inline=False)
             else:
                 embed.add_field(name=f'{signature} {aliases}', value=description, inline=False)
             embed.set_footer(text=f'Use "{self.clean_prefix}help <command>" for more info on a command.')
@@ -233,7 +233,7 @@ class HelpCommand(commands.HelpCommand):
                 aliases = self.get_command_aliases(command)
 
                 if command.parent:
-                    embed.add_field(name=f'╚╡{signature}', value=description, inline=False)
+                    embed.add_field(name=f'**╚╡**{signature}', value=description, inline=False)
                 else:
                     embed.add_field(name=f'{signature} {aliases}', value=description, inline=False)
         embed.set_footer(text=f'Use "{self.clean_prefix}help <command>" for more info on a command.')
@@ -267,14 +267,14 @@ class Help(commands.Cog):
     async def cog_check(self, ctx):
         return True
 
-    def get_uptime(self):
+    def get_uptime(self) -> str:
         delta_uptime = datetime.utcnow() - self.bot.launch_time
         hours, remainder = divmod(int(delta_uptime.total_seconds()), 3600)
         minutes, seconds = divmod(remainder, 60)
         days, hours = divmod(hours, 24)
         return f'`{days}d, {hours}h, {minutes}m, {seconds}s`'
 
-    def format_commit(self, commit):
+    def format_commit(self, commit) -> str:
         short, _, _ = commit.message.partition('\n')
         short_sha2 = commit.hex[0:6]
         commit_tz = timezone(timedelta(minutes=commit.commit_time_offset))
@@ -284,7 +284,7 @@ class Help(commands.Cog):
         offset = human_timedelta(commit_time.astimezone(timezone.utc).replace(tzinfo=None), accuracy=1)
         return f'[`{short_sha2}`](https://github.com/Gobot1234/Epic-Bot/commit/{commit.hex}) {short} ({offset})'
 
-    def get_last_commits(self, count=3):
+    def get_last_commits(self, count=3) -> str:
         repo = pygit2.Repository('.git')
         commits = list(islice(repo.walk(repo.head.target, pygit2.GIT_SORT_TOPOLOGICAL), count))
         return '\n'.join(self.format_commit(c) for c in commits)
@@ -374,7 +374,7 @@ class Help(commands.Cog):
             await ctx.send(f'Your current prefix is `{self.bot.prefixes[ctx.guild.id]}`')
 
     @prefix.command()
-    async def add(self, ctx, prefix):
+    async def add(self, ctx, *, prefix):
         if prefix.startswith(f'<@{ctx.me.id}>') or prefix.startswith(f'<@!{ctx.me.id}>'):
             await ctx.send('I\'m sorry but you can\'t use that prefix')
         else:
@@ -383,7 +383,7 @@ class Help(commands.Cog):
             await ctx.send(f'Prefix successfully changed to `{prefix}`')
 
     @prefix.command()
-    async def remove(self, ctx, prefix):
+    async def remove(self, ctx, *, prefix):
         if prefix.startswith(f'<@{self.bot.user.id}>') or prefix.startswith(f'<@!{self.bot.user.id}>'):
             await ctx.send('I\'m sorry but you can\'t use that prefix')
         else:
@@ -391,21 +391,128 @@ class Help(commands.Cog):
             # remove from cached dict
             await ctx.send(f'Prefix successfully changed to `{prefix}`')
 
-    @commands.command(name='8ball')
-    async def _8ball(self, ctx, *, question):
-        responses = ['no u',
-                     ' get the fu** out of my room im playing mc',
-                     'just no',
-                     'my answer is no and die',
-                     'no frikking dumb questions!',
-                     'stap',
-                     'yes!',
-                     'yes?! ',
-                     'why are you so dumb??',
-                     'certainly yes!',
-                     'ya like jazz? I do!',
-                     'yes yes yes']
-        await ctx.send(f'Question: {ctx.message.clean_content.split(" ", 1)[1]}\nAnswer: {choice(responses)}')
+    @commands.command()
+    async def avatar(self, ctx, member: discord.Member = None):
+        member = member or ctx.author
+        embed = discord.Embed(
+            title=f'{member.display_name}\'s avatar',
+            description=f'[PNG]({member.avatar_url_as(format="png")}) | '
+                        f'[JPEG]({member.avatar_url_as(format="jpg")}) | '
+                        f'[WEBP]({member.avatar_url_as(format="webp")})',
+            colour=discord.Colour.blurple()
+        )
+        if member.is_avatar_animated():
+            embed.description += f' | [GIF]({member.avatar_url_as(format="gif")})'
+        embed.set_author(name=member.display_name, icon_url=member.avatar_url)
+        embed.set_image(url=member.avatar_url_as(format='gif' if member.is_avatar_animated() else 'webp'))
+        await ctx.send(embed=embed)
+
+    @commands.command()
+    async def user(self, ctx, user: discord.Member):
+        shared_guilds = [g for g in self.bot.guilds if g.get_member(ctx.author.id)]
+        perms = ' | '.join([perm for perm, val in
+                            dict(ctx.author.permissions_in(ctx.channel)).items() if val]).replace("_", " ")
+
+    @commands.command(name='server-info', aliases=['serverinfo'])
+    async def server(self, ctx, *, guild_id: int = None):
+        if guild_id is not None and await self.bot.is_owner(ctx.author):
+            guild = self.bot.get_guild(guild_id)
+            if guild is None:
+                return await ctx.send(f'Invalid Guild ID given.')
+        else:
+            guild = ctx.guild
+
+        roles = [role.mention for role in guild.roles if role is not guild.default_role]
+
+        class Secret:
+            pass
+
+        secret_member = Secret()
+        secret_member.id = 0
+        secret_member.roles = [guild.default_role]
+
+        # figure out what channels are 'secret'
+        secret = Counter()
+        totals = Counter()
+        for channel in guild.channels:
+            perms = channel.permissions_for(secret_member)
+            channel_type = type(channel)
+            totals[channel_type] += 1
+            if not perms.read_messages:
+                secret[channel_type] += 1
+            elif isinstance(channel, discord.VoiceChannel) and (not perms.connect or not perms.speak):
+                secret[channel_type] += 1
+
+        member_by_status = Counter(str(m.status) for m in guild.members)
+
+        e = discord.Embed()
+        e.title = guild.name
+        e.add_field(name='ID', value=guild.id)
+        e.add_field(name='Owner', value=guild.owner)
+        if guild.icon:
+            e.set_thumbnail(url=guild.icon_url)
+
+        channel_info = []
+        key_to_emoji = {
+            discord.TextChannel: '<:text_channel:586339098172850187>',
+            discord.VoiceChannel: '<:voice_channel:586339098524909604>',
+        }
+        for key, total in totals.items():
+            secrets = secret[key]
+            try:
+                emoji = key_to_emoji[key]
+            except KeyError:
+                continue
+
+            if secrets:
+                channel_info.append(f'{emoji} {total} ({secrets} locked)')
+            else:
+                channel_info.append(f'{emoji} {total}')
+
+        info = []
+        features = set(guild.features)
+        all_features = {
+            'PARTNERED': 'Partnered',
+            'VERIFIED': 'Verified',
+            'DISCOVERABLE': 'Server Discovery',
+            'PUBLIC': 'Server Discovery/Public',
+            'INVITE_SPLASH': 'Invite Splash',
+            'VIP_REGIONS': 'VIP Voice Servers',
+            'VANITY_URL': 'Vanity Invite',
+            'MORE_EMOJI': 'More Emoji',
+            'COMMERCE': 'Commerce',
+            'LURKABLE': 'Lurkable',
+            'NEWS': 'News Channels',
+            'ANIMATED_ICON': 'Animated Icon',
+            'BANNER': 'Banner'
+        }
+
+        for feature, label in all_features.items():
+            if feature in features:
+                info.append(f'{ctx.tick(True)}: {label}')
+
+        if info:
+            e.add_field(name='Features', value='\n'.join(info))
+
+        e.add_field(name='Channels', value='\n'.join(channel_info))
+
+        if guild.premium_tier != 0:
+            boosts = f'Level {guild.premium_tier}\n{guild.premium_subscription_count} boosts'
+            last_boost = max(guild.members, key=lambda m: m.premium_since or guild.created_at)
+            if last_boost.premium_since is not None:
+                boosts = f'{boosts}\nLast Boost: {last_boost} ({human_timedelta(last_boost.premium_since, accuracy=2)})'
+            e.add_field(name='Boosts', value=boosts, inline=False)
+
+        fmt = f'<:OnlineStatus:659012420735467540> {member_by_status["online"]} ' \
+              f'<:IdleStatus:659012420672421888> {member_by_status["idle"]} ' \
+              f'<:DNDStatus:659012419296952350> {member_by_status["dnd"]} ' \
+              f'<:OfflineStatus:659012420273963008> {member_by_status["offline"]}\n' \
+              f'Total: {guild.member_count}'
+
+        e.add_field(name='Members', value=fmt, inline=False)
+        e.add_field(name='Roles', value=', '.join(roles) if len(roles) < 10 else f'{len(roles)} roles')
+        e.set_footer(text='Created').timestamp = guild.created_at
+        await ctx.send(embed=e)
 
 
 def setup(bot):

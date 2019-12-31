@@ -19,6 +19,7 @@ from Utils.formats import format_exec, format_error
 
 __version__ = '0.0.1'
 
+
 class Owner(commands.Cog):
     """These commands can only be used by the owner of the bot, or the guild owner"""
 
@@ -26,14 +27,12 @@ class Owner(commands.Cog):
         self.bot = bot
         self.first = True
 
-    async def a__init__(self):
+    async def async__init__(self):
         info = await self.bot.application_info()
         self.bot.owner = info.owner
 
         try:
-            channel = int(open('channel.txt', 'r').read())
-            await self.bot.get_channel(channel).purge(limit=2)
-            await self.bot.get_channel(channel).send('Finished restarting...', delete_after=5)
+            channel = self.bot.get_channel(int(open('channel.txt', 'r').read()))
             remove('channel.txt')
         except FileNotFoundError:
             pass
@@ -42,7 +41,7 @@ class Owner(commands.Cog):
                 async for m in channel.history(limit=5):
                     if m.author == self.bot.user:
                         await m.delete()
-                    if m.author == self.bot.owner and m.content == f'{self.bot.prefix}logout' or m.content == f'{self.bot.prefix}restart':
+                    if m.author == self.bot.owner and m.content == f'=logout' or m.content == f'=restart':
                         try:
                             await m.delete()
                         except discord.Forbidden:
@@ -54,6 +53,7 @@ class Owner(commands.Cog):
             return True
         elif ctx.guild:
             return is_guild_owner(ctx)
+        await ctx.send('failed')
         return False
 
     async def failed(self, ctx, extension, error):
@@ -74,7 +74,7 @@ class Owner(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         if self.first:
-            await self.a__init__()
+            await self.async__init__()
             self.first = False
         print(f'\n\nLogged in as: {self.bot.user.name} - {self.bot.user.id}\n'
               f'Version: {discord.__version__} of Discord.py\nVersion: V.{__version__} of Light Bot')
@@ -114,7 +114,8 @@ class Owner(commands.Cog):
             for f in failed:
                 entries.append(f)
             reload = buttons.Paginator(title=f'Reloaded `{len(reloaded)}` cog{"s" if len(reloaded) > 1 else ""} {exc}',
-                                       colour=discord.Colour.blurple(), embed=True, timeout=90, entries=entries, length=1)
+                                       colour=discord.Colour.blurple(), embed=True, timeout=90, entries=entries,
+                                       length=1)
             return await reload.start(ctx)
         try:
             self.bot.reload_extension(f'Cogs.{extension}')
@@ -143,7 +144,6 @@ class Owner(commands.Cog):
           - `bot`: the bot instance
           - `commands`: the discord.ext.commands module
           - `ctx`: the invocation context
-          - `_`: the last result
 
         eg. `{prefix}eval` ```py
         await ctx.send('lol')```
@@ -154,7 +154,6 @@ class Owner(commands.Cog):
                 'ctx': ctx,
                 'discord': discord,
                 'commands': commands,
-                '_': self._last_result,
                 'self': self,
             }
 
@@ -169,9 +168,9 @@ class Owner(commands.Cog):
             except Exception as e:
                 end = perf_counter()
 
-                await ctx.message.add_reaction(':goodcross:626829085682827266')
+                await ctx.message.add_reaction('<:goodcross:626829085682827266>')
                 embed = Embed(title=f'<:goodcross:626829085682827266> {type(e).__name__}',
-                              description=f'\n{format_error(e)}',  color=Colour.red())
+                              description=f'\n{format_error(e)}', color=Colour.red())
                 embed.set_footer(
                     text=f'Python: {python_version()} • Process took {round((end - start) * 1000, 2)} ms to run',
                     icon_url='https://www.python.org/static/apple-touch-icon-144x144-precomposed.png')
@@ -179,12 +178,12 @@ class Owner(commands.Cog):
             func = env['func']
             try:
                 with redirect_stdout(stdout):
-                    ret = await asyncio.create_task(asyncio.wait_for(func, 60, loop=self.bot.loop))
+                    ret = await asyncio.create_task(asyncio.wait_for(func(), 60, loop=self.bot.loop))
             except Exception as e:
                 value = stdout.getvalue()
                 end = perf_counter()
 
-                await ctx.message.add_reaction(':goodcross:626829085682827266')
+                await ctx.message.add_reaction('<:goodcross:626829085682827266>')
                 embed = Embed(title=f'<:goodcross:626829085682827266> {type(e).__name__}',
                               description=f'\n{value}{format_error(e)}', color=Colour.red())
                 embed.set_footer(
@@ -212,7 +211,6 @@ class Owner(commands.Cog):
                         if value:
                             embed.add_field(name='Eval complete', value='\u200b')
                     else:
-                        self._last_result = ret
                         embed.add_field(name='Eval returned', value=f'```py\n{value}{ret}```')
                     embed.set_footer(
                         text=f'Python: {python_version()} • Process took {round((end - start) * 1000, 2)} ms to run',
@@ -223,7 +221,7 @@ class Owner(commands.Cog):
     @commands.is_owner()
     async def restart(self, ctx):
         """Used to restart the bot"""
-        await ctx.message.add_reaction('<a:loading:661210169870516225>')
+        await ctx.message.add_reaction('a:loading:661210169870516225')
         await ctx.send(f'**Restarting the Bot** {ctx.author.mention}')
         open('channel.txt', 'w+').write(str(ctx.channel.id))
         await self.bot.close()
@@ -251,7 +249,7 @@ class Owner(commands.Cog):
         else:
             await ctx.message.add_reaction(':tick:626829044134182923')
         out = buttons.Paginator(title=f'GitHub push output', colour=discord.Colour.blurple(), embed=True, timeout=90,
-                                entries=[f'**Commit:** ```bash\n{commit}```', f'**Push:** ```bash\n{push}```'])
+                                entries=[f'**Commit:** ```js\n{commit}```', f'**Push:** ```js\n{push}```'])
         await out.start(ctx)
 
     @git.command()

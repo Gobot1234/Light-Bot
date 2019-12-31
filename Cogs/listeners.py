@@ -7,6 +7,7 @@ from datetime import datetime
 import sys
 import traceback
 import asyncpg
+import unidecode
 
 import discord
 from discord.ext import commands, tasks
@@ -21,6 +22,7 @@ class Listeners(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.status.start()
+        self.bot.blacklist_words = []
 
     async def cog_check(self, ctx):
         return False
@@ -57,30 +59,33 @@ class Listeners(commands.Cog):
         try:
             blacklisted = self.bot.pool.fetchval('''FROM $1 SELECT blacklist;''', guild.id)
         except asyncpg.FDWTableNotFoundError:
-            self.bot.pool.excute(
-                '''CREATE TABLE ($1) (
-                prefixes ANYARRAY,
-                colour_n INT,
-                colour_g INT,
-                colour_b INT,
-                economy ANYARRAY,  
-                blacklisted BOOL,  
-                prefixes ANYARRAY,  
-                member role list 
-                id ANYARRAY,  
-                );''', guild.id)
+            self.bot.pool.excute("""CREATE TABLE ($1) ( 
+                                    prefixes ANYARRAY,      -- prefixes are a list
+                                    colour_n INT,           -- default colour for normal embeds
+                                    colour_g INT,           -- colour for gaining roles/perms etc.
+                                    colour_b INT,           -- colour for loosing roles/perms etc.
+                                    blacklisted BOOL,       -- allow a guild to be blacklisted
+                                    member_role_list JSON   -- allow for re-roling to occur
+                                    economy json,           -- allow for the economy and coins dict for games
+                                    );""", guild.id)
         if blacklisted:
             return await guild.leave()
         else:
             embed = discord.Embed(title=':white_check_mark: Server added!',
                                   description='Thank you for adding me to your server!', color=discord.Colour.green())
             embed.set_footer(text=f'Joined at: {datetime.now().strftime("%c")}')
-            await guild.owner.send(embed=embed)
+            m = False
+            for channel in guild.channels:
+                if self.bot.user.permissions_in(channel).send_messages:
+                    m = await channel.send(embed=embed)
+                    break
+            if not m:
+                await guild.owner.send(embed=embed)
 
     @commands.Cog.listener()
     async def on_guild_leave(self, guild):
         pass
-        # delete the column with the matching guild.id
+        # delete the table with the matching guild.id
 
     @commands.Cog.listener()
     async def on_member_join(self, member):  # check if a member joined before
@@ -182,7 +187,7 @@ class Listeners(commands.Cog):
                                                                f'that cannot be found :( although there names were:\n'
                                                                f'`{"`, `".join(names)}`', embed=embed)
 
-        embed.set_footer(text=f'ID: {message.author.id} • {datetime.now().strftime("%c")}', icon_url=author.avatar_url)
+        embed.set_footer(text=f'ID: {message.id} • {datetime.now().strftime("%c")}', icon_url=author.avatar_url)
         await message.guild.system_channel.send(embed=embed)
 
     # guild creation ---------------------------------------------------------------------------------------------------
@@ -254,6 +259,31 @@ class Listeners(commands.Cog):
             return
         await before.guild.system_channel.send(embed=embed)
 
+    @commands.Cog.listener()
+    async def on_message(self, message):
+        # checking if someone someone said a blacklisted word TODO add A blacklisting command and different levels of splitting
+        if message.author.bot:
+            return
+        # self.bot.blacklisted[message.guild.id]['blacklist words']
+        if self.bot.blacklist_words:
+            split_message = re.split("(?:(?:[^a-zA-Z0-9]+)|(?:'[^a-zA-Z0-9]+))|(?:[^a-zA-Z0-9]+)",  # split at non alpha-numericcharacters
+                                     unidecode.unidecode(message.content.lower()))  # normalise unicode
+            rejoined = ''.join(split_message)
+            matched = re.search(f'({"|".join(self.bot.blacklist_words)})+', rejoined)
+            if matched:
+                await message.delete()
+                matched = list(matched.groups())
+                embed = discord.Embed(
+                    title=f'{message.author} your message has been removed as it contains a blacklisted word!',
+                    description=f'Content:\n>>> {message.content}', colour=discord.Colour.red())
+                embed.add_field(name=f'Matched word{"s" if len(matched) > 1 else ""}:', value=', '.join(matched))
+                await message.author.send(embed=embed)
+                embed = discord.Embed(
+                    title=f'{message.author} just said something blacklisted in #{message.channel}!',
+                    description=f'Content:\n>>> {message.content}', colour=discord.Colour.red())
+                embed.add_field(name=f'Matched word{"s" if len(matched) > 1 else ""}:', value=', '.join(matched))
+                await message.guild.system_channel.send(embed=embed)
+
     # error handler ----------------------------------------------------------------------------------------------------
 
     @commands.Cog.listener()
@@ -306,21 +336,3 @@ class Listeners(commands.Cog):
 
 def setup(bot):
     bot.add_cog(Listeners(bot))
-
-
-"""    @commands.Cog.listener()
-    async def on_message(self, message):  # checking if someone someone said a blacklisted word TODO add A blacklisting command
-        if message.author == self.bot.user:
-            return
-        blacklist_words = self.bot.blacklisted[message.guild.id]['blacklist words']
-        if blacklist_words:
-            split_message = re.split("(?:(?:[^a-zA-Z0-9]+')|(?:'[^a-zA-Z0-9]+))|(?:[^a-zA-Z0-9]+)",
-                                     str(message.content).lower())
-            rejoined = ''.join(split_message)
-            if re.search("(%s)+" % '|'.join([blacklist_words]), rejoined):
-                await message.delete()
-                await message.author.send(f'{message.author.mention} Your message \"{message.content}\" '
-                                          f'has been removed as it contains a blacklisted word!',
-                                          delete_after=5)
-                await message.guild.system_channel.send(f'{message.author}, just said {message.content}, '
-                                                        f'in {message.channel.mention}')"""
