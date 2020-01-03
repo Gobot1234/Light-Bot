@@ -1,16 +1,14 @@
 import asyncio
+import re
 import discord
-from datetime import datetime, timedelta
 
-import typing
-from psutil import Process
-
-from typing import Optional
-from discord.ext import commands, buttons
 from collections import Counter
+from datetime import datetime, timedelta
+from psutil import Process
+from typing import Optional, Union
+from discord.ext import commands, buttons
 
 from Utils.time import UserFriendlyTime, human_timedelta
-from Utils.checks import prefix
 
 
 class Staff(commands.Cog):
@@ -26,9 +24,9 @@ class Staff(commands.Cog):
         self.process = Process()
 
     async def cog_check(self, ctx):
-
         return ctx.author.guild_permissions.ban_members or ctx.author.guild_permissions.kick_members \
-               or ctx.author.guild_permissions.manage_roles or ctx.author.permissions_in(ctx.channel).manage_messages
+               or ctx.author.guild_permissions.manage_roles or ctx.author.permissions_in(ctx.channel).manage_messages \
+               or ctx.author.guild_permissions.manage_guild
 
     async def unmute_timer(self, ctx, member, time: float):
         await asyncio.sleep(time)
@@ -217,7 +215,7 @@ class Staff(commands.Cog):
     @commands.command()
     @commands.has_permissions(ban_members=True)
     @commands.bot_has_permissions(ban_members=True)
-    async def unban(self, ctx, users: commands.Greedy[typing.Union[discord.User, int, str]]):
+    async def unban(self, ctx, users: commands.Greedy[Union[discord.User, int, str]]):
         """
         Unban a user you need to be able to normally ban users to use this command.
 
@@ -295,6 +293,80 @@ class Staff(commands.Cog):
             await ctx.send(f'{member.mention} has been kicked!')
             await member.kick(reason=f'"{reason}", by {ctx.author} at {datetime.now()}')
 
+    @commands.command(name='join-message')
+    @commands.guild_only()
+    @commands.has_permissions(manage_guild=True)
+    async def join_message(self, ctx, *, message):
+        """
+        Please type {prefix}help join-message to view the full formatting
+        Set a message to be sent to a new member when they join
+        {member} - The user's name
+        {server} - The server name
+        {@member} - Mentions the user
+        #channel - Mention a channel
+
+        eg. {prefix}join-message Hey :wave: {member}. Welcome to {server} be sure to read the {#rules} before starting here
+        """
+        self.bot.config_cache[ctx.guild.id]['join_message'] = message
+        await self.bot.db.execute(
+            """
+            UPDATE config
+                SET join_message = $1
+            WHERE guild_id = $2
+            """, message, ctx.guild.id)
+        welcome_msg = message.replace('@member', 'm_member')
+
+        f_welcome_msg = welcome_msg.format(member=ctx.author.name,
+                                           server=ctx.guild.name,
+                                           m_member=ctx.author.mention)
+
+        await ctx.send(f'Set your join message to\n{f_welcome_msg}')
+
+    @commands.group(invoke_without_subcommand=True, aliases=['prefixes'])
+    @commands.has_permissions(manage_guild=True)
+    async def prefix(self, ctx):
+        """View your current prefixes by just typing {prefix}prefix"""
+        if ctx.invoked_subcommand is None:
+            await ctx.send(f'Your current prefixes are `{"`, `".join(self.bot.config_cache[ctx.guild.id]["prefixes"])}` '
+                           f'& {self.bot.user.mention}')
+
+    @prefix.command()
+    async def add(self, ctx, prefix: str):
+        """Add a prefix to your server's prefixes"""
+        if prefix.startswith(f'<@{ctx.me.id}>') or prefix.startswith(f'<@!{ctx.me.id}>'):
+            await ctx.send('I\'m sorry but you can\'t use that prefix')
+        else:
+            if len(self.bot.config_cache[ctx.guild.id]["prefixes"]) >= 10:
+                return await ctx.send('You can\'t add anymore prefixes')
+            prefix = self.bot.config_cache[ctx.guild.id]["prefixes"].append(prefix)
+            await self.bot.db.execute(
+                """
+                UPDATE config
+                    prefixes = $1
+                WHERE guild_id = $2;
+                """, prefix, ctx.guild.id)
+            await ctx.send(f'Successfully added `{prefix}` to your prefixes')
+
+    @prefix.command()
+    async def remove(self, ctx, prefix: str):
+        """Remove a prefix from your server's prefixes"""
+        if prefix.startswith(f'<@{self.bot.user.id}>') or prefix.startswith(f'<@!{self.bot.user.id}>'):
+            await ctx.send('I\'m sorry but you can\'t use that prefix')
+        else:
+            try:
+                prefix = self.bot.config_cache[ctx.guild.id]["prefixes"].remove(prefix)
+            except ValueError:
+                await ctx.send(f'{commands.clean_content.convert(ctx, prefix)} isn\'t in your list of prefixes')
+            else:
+                await self.bot.db.execute(
+                    """
+                    UPDATE config
+                        prefixes = $1
+                    WHERE guild_id = $2;
+                    """, prefix, ctx.guild.id)
+                await ctx.send(f'Successfully removed `{prefix}` from prefixes')
+
 
 def setup(bot):
     bot.add_cog(Staff(bot))
+    bot.log.info('Loaded Staff cog')

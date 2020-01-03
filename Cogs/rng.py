@@ -1,14 +1,15 @@
+import discord
+import sr_api
 import random
+
 from io import BytesIO
 
 from discord.ext import commands
-import sr_api
-import discord
 
 client = sr_api.Client()
 
 
-class Api(commands.Cog):
+class RNG(commands.Cog):
     """These are commands from Some Random API"""
 
     def __init__(self, bot):
@@ -20,7 +21,7 @@ class Api(commands.Cog):
                                  'Better not tell you now.', 'Cannot predict now.', 'Concentrate and ask again.',
                                  "Don't count on it.", 'My reply is no.', 'My sources say no.', 'Outlook not so good.',
                                  'Very doubtful.', 'Ya like jazz? I do!']
-        self.hugs = ['https://media.tenor.com/images/c5a29b75582f26c28f5d271384f673ad/tenor.gif',
+        self.hug_images = ['https://media.tenor.com/images/c5a29b75582f26c28f5d271384f673ad/tenor.gif',
                      'https://media.tenor.com/images/9164f10a0dbbf7cdb6aeb46184b16365/tenor.gif',
                      'https://media.tenor.com/images/564eac526a8af795c90ce5985904096e/tenor.gif',
                      'https://media.tenor.com/images/4d5a77b99ab86fc5e9581e15ffe34b5e/tenor.gif',
@@ -35,6 +36,14 @@ class Api(commands.Cog):
                      'https://tenor.com/view/hug-your-cat-day-hug-cat-gif-8723720',
                      'https://media.tenor.com/images/adbb48575b54edaabd7383010bc2510a/tenor.gif',
                      'https://cdn.discordapp.com/attachments/448285120634421278/633527959092854807/boy_oh_boy_i_love_hugs.jpg']
+        self.hug_hugs = ['(っ´▽｀)っ', '🤗', '⊂((・▽・))⊃', '＼(^o^)／', 'd=(´▽｀)=b', '⊂(◉‿◉)つ', '⊂（♡⌂♡）⊃',
+                         '⊂( ◜◒◝ )⊃', '(づ｡◕‿‿◕｡)づ', '(づ￣ ³￣)づ', '(っ˘̩╭╮˘̩)っ', '⁽₍੭ ՞̑◞ළ̫̉◟՞̑₎⁾੭', '(੭ु｡╹▿╹｡)੭ु⁾⁾',
+                         '(*´σЗ`)σ', '(っ´∀｀)っ', 'c⌒っ╹v╹ )っ', '(σ･з･)σ', '(੭ु´･ω･`)੭ु⁾⁾', '(oﾟ▽ﾟ)o','༼つ ் ▽ ் ༽つ',
+                         '༼つ . •́ _ʖ •̀ . ༽つ', '╏つ ͜ಠ ‸ ͜ಠ ╏つ', '༼ つ ̥◕͙_̙◕͖ ͓༽つ', '༼ つ ◕o◕ ༽つ', '༼ つ ͡ ͡° ͜ ʖ ͡ ͡° ༽つ',
+                         '(っಠ‿ಠ)っ', '༼ つ ◕_◕ ༽つ', 'ʕっ•ᴥ•ʔっ', '༼ つ ▀̿_▀̿ ༽つ', 'ʕ ⊃･ ◡ ･ ʔ⊃', '╏つ” ⊡ 〜 ⊡ ” ╏つ',
+                         '(⊃｡•́‿•̀｡)⊃', '(っ⇀⑃↼)っ', '(.づ◡﹏◡)づ.', '(.づσ▿σ)づ.',' (っ⇀`皿′↼)っ', '(.づ▣ ͜ʖ▣)づ.',
+                         '(つ ͡° ͜ʖ ͡°)つ', '(⊃ • ʖ̫ • )⊃', '(っ・∀・）っ', '(つ´∀｀)つ', '(っ*´∀｀*)っ', '(つ▀¯▀)つ',
+                         '(つ◉益◉)つ', '(> ^_^ )>']
         self.ewan_images = ['https://i.pinimg.com/originals/4c/47/b9/4c47b9d5a2460f8a803a4535493a027c.gif',
                             'https://media.giphy.com/media/l3fZCIWuhobBy9eo0/giphy.gif',
                             'https://media2.giphy.com/media/l1Ku2UzLA5v7NhB28/giphy.gif',
@@ -108,8 +117,8 @@ class Api(commands.Cog):
         await ctx.send(content=None, embed=embed, file=file)
 
     @commands.command(name='8ball')
-    async def _8ball(self, ctx, *, question):
-        await ctx.send(f'Question: {await commands.clean_content().convert(ctx, question)}'
+    async def _8ball(self, ctx, *, question: commands.clean_content()):
+        await ctx.send(f'Question: {question}'
                        f'\nAnswer: {random.choice(self._8ball_responses)}')
 
     @commands.command(aliases=['obi-wan'])
@@ -124,7 +133,7 @@ class Api(commands.Cog):
     @commands.command()
     async def hug(self, ctx, huggie: discord.Member, *, note=None):
         """Someone need some love?
-        eg. `{prefix}hug @Gobot1234#2435 mmmmmh notes`"""
+        eg. {prefix}hug @Gobot1234#2435 mmmmmh notes"""
         hugger = ctx.author
 
         if huggie.bot:
@@ -134,14 +143,16 @@ class Api(commands.Cog):
             response = random.choice(['That\'s kind of sad ngl :(', 'Come on that\'s gotta feel weird', 'Get a room'])
             await ctx.send(response)
         else:
-            gif = random.choice(self.hugs)
+            gif = random.choice(self.hug_images)
             embed = discord.Embed(title=f"You have received a hug from {hugger.display_name} (っ´▽｀)っ", color=0xffd1dc)
             embed.set_image(url=gif)
             if note:
                 embed.add_field(name='A note was enclosed', value=note, inline=False)
             await huggie.send(embed=embed)
-            await ctx.send(f'> Hugged (っ´▽｀)っ{huggie.display_name}')
+            await ctx.send(f'> Hugged {huggie.display_name} {random.choice(self.hug_hugs)}')
 
 
 def setup(bot):
-    bot.add_cog(Api(bot))
+    bot.add_cog(RNG(bot))
+    bot.log.info('Loaded RNG cog')
+

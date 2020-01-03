@@ -1,23 +1,26 @@
-from subprocess import getoutput
 import asyncio
-from time import perf_counter
+import importlib
+
+import discord
+from discord import Colour, Embed, File
+
+
 from contextlib import redirect_stdout
-from datetime import datetime
 from io import StringIO
 from os import remove
 from platform import python_version
-from sys import stderr
 from traceback import print_exc
 from textwrap import indent
-from discord import Colour, Embed, File
+from time import perf_counter
+from subprocess import getoutput
+from sys import stderr
 
-import discord
 from discord.ext import commands, buttons
 
 from Utils.checks import is_guild_owner
-from Utils.formats import format_exec, format_error
+from Utils.formats import format_error
 
-__version__ = '0.0.1'
+__version__ = '0.0.2'
 
 
 class Owner(commands.Cog):
@@ -37,23 +40,26 @@ class Owner(commands.Cog):
         except FileNotFoundError:
             pass
         else:
-            if channel is not None:
-                async for m in channel.history(limit=5):
-                    if m.author == self.bot.user:
+            if channel:
+                deleted = 0
+                async for m in channel.history(limit=3):
+                    if m.author == self.bot.user and deleted < 2:
                         await m.delete()
-                    if m.author == self.bot.owner and m.content == f'=logout' or m.content == f'=restart':
+                        deleted += 1
+                    if m.author == self.bot.owner and m.content == (f'=logout' or f'=restart'):
                         try:
                             await m.delete()
                         except discord.Forbidden:
                             pass
                 await channel.send('Finished restarting...', delete_after=10)
+        print(f'Successfully logged in as {self.bot.user.name} and booted...!')
+        self.bot.log.info(f'Successfully logged in as {self.bot.user.name} and booted...!')
 
     async def cog_check(self, ctx):
-        if ctx.author.id == ctx.bot.owner_id:
+        if ctx.author == ctx.bot.owner:
             return True
         elif ctx.guild:
             return is_guild_owner(ctx)
-        await ctx.send('failed')
         return False
 
     async def failed(self, ctx, extension, error):
@@ -76,12 +82,13 @@ class Owner(commands.Cog):
         if self.first:
             await self.async__init__()
             self.first = False
-        print(f'\n\nLogged in as: {self.bot.user.name} - {self.bot.user.id}\n'
-              f'Version: {discord.__version__} of Discord.py\nVersion: V.{__version__} of Light Bot')
-        print(self.bot.user.name, 'is fully loaded\nSuccessfully logged in and booted...!')
-        self.bot.log.info(f'\n\nLogged in as: {self.bot.user.name} - {self.bot.user.id}\n'
-                          f'Version: {discord.__version__} of Discord.py\nVersion: V.{__version__} of Light Bot')
-        self.bot.log.info(self.bot.user.name, 'is fully loaded\nSuccessfully logged in and booted...!')
+
+    @commands.Cog.listener()
+    async def on_connect(self):
+        print(f'Logging in as: {self.bot.user.name} V.{__version__} - {self.bot.user.id} -- '
+              f'Version: {discord.__version__} of Discord.py')
+        self.bot.log.info(f'Logging in as: {self.bot.user.name} V.{__version__} - {self.bot.user.id}')
+        self.bot.log.info(f'Version: {discord.__version__} of Discord.py')
 
     @commands.command(aliases=['r'])
     @commands.is_owner()
@@ -102,10 +109,12 @@ class Owner(commands.Cog):
                         self.bot.load_extension(f'Cogs.{extension}')
                     except Exception as e:
                         failed.append(f'<:goodcross:626829085682827266> `{extension}` - Failed\n'
-                                      f'{format_error(e)}```')
+                                      f'```py\n{format_error(e)}```')
                         failed_exts.append(extension)
+                    else:
+                        reloaded.append(extension)
                 except Exception as e:
-                    failed.append(f'<:goodcross:626829085682827266> `{extension}` - Failed\n{format_error(e)}')
+                    failed.append(f'<:goodcross:626829085682827266> `{extension}` - Failed\n```py\n{format_error(e)}```')
                 else:
                     reloaded.append(extension)
             exc = f'\nFailed to load {len(failed_exts)} cog{"s" if len(failed_exts) > 1 else ""} ' \
@@ -167,10 +176,9 @@ class Owner(commands.Cog):
                 exec(to_compile, env)
             except Exception as e:
                 end = perf_counter()
-
-                await ctx.message.add_reaction('<:goodcross:626829085682827266>')
+                await ctx.message.add_reaction(':goodcross:626829085682827266')
                 embed = Embed(title=f'<:goodcross:626829085682827266> {type(e).__name__}',
-                              description=f'\n{format_error(e)}', color=Colour.red())
+                              description=format_error(e), color=Colour.red())
                 embed.set_footer(
                     text=f'Python: {python_version()} • Process took {round((end - start) * 1000, 2)} ms to run',
                     icon_url='https://www.python.org/static/apple-touch-icon-144x144-precomposed.png')
@@ -183,9 +191,10 @@ class Owner(commands.Cog):
                 value = stdout.getvalue()
                 end = perf_counter()
 
-                await ctx.message.add_reaction('<:goodcross:626829085682827266>')
+                await ctx.message.add_reaction(':goodcross:626829085682827266')
                 embed = Embed(title=f'<:goodcross:626829085682827266> {type(e).__name__}',
-                              description=f'\n{value}{format_error(e)}', color=Colour.red())
+                              description=f'{value}{format_error(e)}',
+                              color=Colour.red())
                 embed.set_footer(
                     text=f'Python: {python_version()} • Process took {round((end - start) * 1000, 2)} ms to run',
                     icon_url='https://www.python.org/static/apple-touch-icon-144x144-precomposed.png')
@@ -204,13 +213,13 @@ class Owner(commands.Cog):
                         # repr all non-strings
                         value = repr(value)
 
-                    embed = Embed(
-                        title=f'Evaluation completed {ctx.author.display_name} <:tick:626829044134182923>',
-                        color=Colour.green())
+                    embed = Embed(title=f'Evaluation completed {ctx.author.display_name} <:tick:626829044134182923>',
+                                  color=Colour.green())
                     if ret is None:
                         if value:
-                            embed.add_field(name='Eval complete', value='\u200b')
+                            embed.add_field(name='Eval complete', value=f'```py\n{value}```')
                     else:
+                        self._last_result = ret
                         embed.add_field(name='Eval returned', value=f'```py\n{value}{ret}```')
                     embed.set_footer(
                         text=f'Python: {python_version()} • Process took {round((end - start) * 1000, 2)} ms to run',
@@ -263,6 +272,22 @@ class Owner(commands.Cog):
                                 entries=[f'**Reset:** ```js\n{reset}```', f'**Pull:** ```js\n{pull}```'])
         await out.start(ctx)
 
+    @commands.command()
+    @commands.is_owner()
+    async def reloadutil(self, ctx, name: str):
+        """Reload a Utils module"""
+        try:
+            module_name = importlib.import_module(f"Utils.{name}")
+            importlib.reload(module_name)
+        except ModuleNotFoundError:
+            return await ctx.send(f'Couldn\'t find module named **{name}**')
+        except Exception as e:
+            await ctx.send(f'Module **{name}** returned error and was not reloaded...\n```py\n{format_error(e)}```')
+        else:
+            await ctx.send(f"Reloaded module **{name}**")
+
+
 
 def setup(bot):
     bot.add_cog(Owner(bot))
+    bot.log.info('Loaded Owner cog')

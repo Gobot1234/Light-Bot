@@ -23,7 +23,7 @@ DEALINGS IN THE SOFTWARE."""
 import datetime
 import parsedatetime as pdt
 from dateutil.relativedelta import relativedelta
-from .formats import plural, human_join
+from .formats import Plural, human_join
 from discord.ext import commands
 import re
 
@@ -274,7 +274,7 @@ def human_timedelta(dt, *, source=None, accuracy=3, brief=False, suffix=True):
             if weeks:
                 elem -= weeks * 7
                 if not brief:
-                    output.append(format(plural(weeks), 'week'))
+                    output.append(format(Plural(weeks), 'week'))
                 else:
                     output.append(f'{weeks}w')
 
@@ -284,7 +284,7 @@ def human_timedelta(dt, *, source=None, accuracy=3, brief=False, suffix=True):
         if brief:
             output.append(f'{elem}{brief_attr}')
         else:
-            output.append(format(plural(elem), attr))
+            output.append(format(Plural(elem), attr))
 
     if accuracy is not None:
         output = output[:accuracy]

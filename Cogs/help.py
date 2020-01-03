@@ -1,21 +1,20 @@
-from asyncio import TimeoutError
-from itertools import islice
-from re import split
-from psutil import virtual_memory, cpu_percent, Process
-from humanize import naturalsize
-from platform import python_version
-from datetime import datetime, timedelta, timezone
 import pygit2
-from random import choice
-from collections import Counter
-
-# import asyncpg
 import discord
+
+from asyncio import TimeoutError
+from datetime import datetime, timedelta, timezone
+from collections import Counter
+from humanize import naturalsize
+from itertools import islice
+from platform import python_version
+from psutil import virtual_memory, cpu_percent, Process
+from re import split
+
 from discord.ext import commands
 
-from Cogs.owner import Owner
-from Utils.checks import prefix
 from Utils.time import human_timedelta
+
+# todo reorder imports and use from imports
 
 
 class HelpCommand(commands.HelpCommand):
@@ -39,8 +38,7 @@ class HelpCommand(commands.HelpCommand):
         else:  # else assume it has args a signature and is a subcommand
             return '`{}` `{}`'.format(command.name, '`, `'.join(split(r'\B ', command.signature)))
 
-    def get_command_aliases(self,
-                            command) -> str:  # this is a custom written method along with all the others below this
+    def get_command_aliases(self, command) -> str:
         """Method to return a commands aliases"""
         if not command.aliases:  # check if it has any aliases
             return ''
@@ -71,7 +69,7 @@ class HelpCommand(commands.HelpCommand):
             try:
                 if await obj.cog_check(ctx):
                     cogs.append(name)
-            except:
+            except commands.CommandError:
                 pass
         cogs.sort()
 
@@ -112,6 +110,8 @@ class HelpCommand(commands.HelpCommand):
                 elif str(reaction.emoji) == '⏮':  # go to the first page
                     page = 0
                     embed = await self.bot_help_paginator(page, cogs)
+                    await ctx.send(len(embed))
+
                     await help_embed.edit(embed=embed)
 
                 elif str(reaction.emoji) == '◀':  # go to the previous page
@@ -158,21 +158,24 @@ class HelpCommand(commands.HelpCommand):
     async def bot_help_paginator(self, page: int, cogs) -> discord.Embed:
         ctx = self.context
         bot = ctx.bot
-        all_commands = [command for command in
-                        await self.filter_commands(bot.commands)]  # filter the commands the user can use
+        all_commands = [command for command in await self.filter_commands(bot.commands)]  # filter the commands the user can use
         cog = bot.get_cog(cogs[page])  # get the current cog
 
         embed = discord.Embed(title=f'Help with {cog.qualified_name} ({len(all_commands)} commands)',
-                              description=cog.description, color=discord.Colour.blurple())
+                              description=cog.description,
+                              color=bot.config_cache[ctx.guild.id]['colour'] if ctx.guild else discord.Colour.blurple())
         embed.set_author(name=f'We are currently on page {page + 1}/{len(cogs)}', icon_url=ctx.author.avatar_url)
         for c in cog.walk_commands():
-            if await c.can_run(ctx) and not c.hidden:
-                signature = self.get_command_signature(c)
-                description = self.get_command_description(c)
-                if c.parent:  # it is a sub-command
-                    embed.add_field(name=f'**╚╡**{signature}', value=description)
-                else:
-                    embed.add_field(name=signature, value=description, inline=False)
+            try:
+                if await c.can_run(ctx) and not c.hidden:
+                    signature = self.get_command_signature(c)
+                    description = self.get_command_description(c)
+                    if c.parent:  # it is a sub-command
+                        embed.add_field(name=f'**╚╡**{signature}', value=description)
+                    else:
+                        embed.add_field(name=signature, value=description, inline=False)
+            except commands.CommandError:
+                pass
         embed.set_footer(text=f'Use "{self.clean_prefix}help <command>" for more info on a command.',
                          icon_url=ctx.bot.user.avatar_url)
         return embed
@@ -182,7 +185,8 @@ class HelpCommand(commands.HelpCommand):
         cog_commands = [command for command in await self.filter_commands(cog.walk_commands())]  # get commands
 
         embed = discord.Embed(title=f'Help with {cog.qualified_name} ({len(cog_commands)} commands)',
-                              description=cog.description, color=discord.Colour.blurple())
+                              description=cog.description,
+                              color=ctx.bot.config_cache[ctx.guild.id]['colour'] if ctx.guild else discord.Colour.blurple())
         embed.set_author(name=f'We are currently looking at the module {cog.qualified_name} and its commands',
                          icon_url=ctx.author.avatar_url)
         for c in cog_commands:
@@ -192,8 +196,7 @@ class HelpCommand(commands.HelpCommand):
             if c.parent:
                 embed.add_field(name=f'**╚╡**{signature}', value=description)
             else:
-                embed.add_field(name=f'{signature} {aliases}',
-                                value=description, inline=False)
+                embed.add_field(name=f'{signature} {aliases}', value=description, inline=False)
         embed.set_footer(text=f'Use "{self.clean_prefix}help <command>" for more info on a command.',
                          icon_url=ctx.bot.user.avatar_url)
         await ctx.send(embed=embed)
@@ -202,7 +205,8 @@ class HelpCommand(commands.HelpCommand):
         ctx = self.context
 
         if await command.can_run(ctx):
-            embed = discord.Embed(title=f'Help with `{command.name}`', color=discord.Colour.blurple())
+            embed = discord.Embed(title=f'Help with `{command.name}`',
+                                  color=ctx.bot.config_cache[ctx.guild.id]['colour'] if ctx.guild else discord.Colour.blurple())
             embed.set_author(
                 name=f'We are currently looking at the {command.cog.qualified_name} cog and its command {command.name}',
                 icon_url=ctx.author.avatar_url)
@@ -222,7 +226,7 @@ class HelpCommand(commands.HelpCommand):
         bot = ctx.bot
 
         embed = discord.Embed(title=f'Help with `{group.name}`', description=bot.get_command(group.name).help,
-                              color=discord.Colour.blurple())
+                              color=bot.config_cache[ctx.guild.id]['colour'] if ctx.guild else discord.Colour.blurple())
         embed.set_author(
             name=f'We are currently looking at the {group.cog.qualified_name} cog and its command {group.name}',
             icon_url=ctx.author.avatar_url)
@@ -243,16 +247,17 @@ class HelpCommand(commands.HelpCommand):
         pass
 
     async def command_not_found(self, string):
+        ctx = self.context
         embed = discord.Embed(title='Error!',
                               description=f'**Error 404:** Command or cog "{string}" not found ¯\_(ツ)_/¯',
-                              color=discord.Colour.red())
+                              color=ctx.bot.config_cache[ctx.guild.id]['colour_bad'] if ctx.guild else discord.Colour.red())
         embed.add_field(name='The current loaded cogs are',
-                        value=f'(`{"`, `".join([cog for cog in self.context.bot.cogs])}`) :gear:')
+                        value=f'(`{"`, `".join([cog for cog in ctx.bot.cogs])}`) :gear:')
         await self.context.send(embed=embed)
 
 
 class Help(commands.Cog):
-    """Need help? Try these with `!help <command>`"""
+    """Need help? Try these with <@630008145162272778> help <command>"""
 
     def __init__(self, bot):
         self.process = Process()
@@ -289,8 +294,8 @@ class Help(commands.Cog):
         commits = list(islice(repo.walk(repo.head.target, pygit2.GIT_SORT_TOPOLOGICAL), count))
         return '\n'.join(self.format_commit(c) for c in commits)
 
-    @commands.command()
-    async def stats(self, ctx):
+    @commands.command(aliases=['info'])
+    async def stats(self, ctx   ):
         memory_usage = self.process.memory_full_info().uss
         rawram = virtual_memory()
         embed = discord.Embed(title=f'**{self.bot.user.name}** - Official Bot Server Invite & Bot information',
@@ -298,7 +303,8 @@ class Help(commands.Cog):
                               description=f'**Commands loaded & Cogs loaded:** `{len(self.bot.commands)}` commands loaded, '
                                           f'`{len(self.bot.cogs)}` cogs loaded :gear:\n\n'
                                           f'**Latest Changes:**\n{self.get_last_commits()}\n',
-                              colour=discord.Colour.blurple(), timestamp=datetime.now())
+                              colour=self.bot.config_cache[ctx.guild.id]['colour'] if ctx.guild else discord.Colour.blurple(),
+                              timestamp=datetime.now())
         embed.set_author(name=str(self.bot.owner), icon_url=self.bot.owner.avatar_url)
 
         # statistics
@@ -367,32 +373,9 @@ class Help(commands.Cog):
                          icon_url=ctx.author.avatar_url)
         await ctx.send(embed=embed)
 
-    @commands.group(invoke_without_subcommand=True)
-    @commands.has_permissions(administrator=True)
-    async def prefix(self, ctx):
-        if ctx.invoked_subcommand is None:
-            await ctx.send(f'Your current prefix is `{self.bot.prefixes[ctx.guild.id]}`')
-
-    @prefix.command()
-    async def add(self, ctx, *, prefix):
-        if prefix.startswith(f'<@{ctx.me.id}>') or prefix.startswith(f'<@!{ctx.me.id}>'):
-            await ctx.send('I\'m sorry but you can\'t use that prefix')
-        else:
-            # add to db
-            # add to cached dict
-            await ctx.send(f'Prefix successfully changed to `{prefix}`')
-
-    @prefix.command()
-    async def remove(self, ctx, *, prefix):
-        if prefix.startswith(f'<@{self.bot.user.id}>') or prefix.startswith(f'<@!{self.bot.user.id}>'):
-            await ctx.send('I\'m sorry but you can\'t use that prefix')
-        else:
-            # remove from db
-            # remove from cached dict
-            await ctx.send(f'Prefix successfully changed to `{prefix}`')
-
     @commands.command()
     async def avatar(self, ctx, member: discord.Member = None):
+        """Get a member's avatar with links to download/view in higher quality"""
         member = member or ctx.author
         embed = discord.Embed(
             title=f'{member.display_name}\'s avatar',
@@ -415,6 +398,7 @@ class Help(commands.Cog):
 
     @commands.command(name='server-info', aliases=['serverinfo'])
     async def server(self, ctx, *, guild_id: int = None):
+        """Get info in the current server"""
         if guild_id is not None and await self.bot.is_owner(ctx.author):
             guild = self.bot.get_guild(guild_id)
             if guild is None:
@@ -517,3 +501,5 @@ class Help(commands.Cog):
 
 def setup(bot):
     bot.add_cog(Help(bot))
+    bot.log.info('Loaded Help cog')
+
