@@ -1,9 +1,8 @@
-import discord
-import sr_api
 import random
-
 from io import BytesIO
 
+import discord
+import sr_api
 from discord.ext import commands
 
 client = sr_api.Client()
@@ -22,26 +21,26 @@ class RNG(commands.Cog):
                                  "Don't count on it.", 'My reply is no.', 'My sources say no.', 'Outlook not so good.',
                                  'Very doubtful.', 'Ya like jazz? I do!']
         self.hug_images = ['https://media.tenor.com/images/c5a29b75582f26c28f5d271384f673ad/tenor.gif',
-                     'https://media.tenor.com/images/9164f10a0dbbf7cdb6aeb46184b16365/tenor.gif',
-                     'https://media.tenor.com/images/564eac526a8af795c90ce5985904096e/tenor.gif',
-                     'https://media.tenor.com/images/4d5a77b99ab86fc5e9581e15ffe34b5e/tenor.gif',
-                     'https://media.tenor.com/images/afbc39fcc4cbe67d9622f657d60d41cf/tenor.gif',
-                     'https://media.tenor.com/images/5d5565fe47af258d83b4caa2a668ccfa/tenor.gif',
-                     'https://media.tenor.com/images/4edcfcfa004403f844494025c5bf83da/tenor.gif',
-                     'https://media.tenor.com/images/c3759877cdcb86e25a1d305d5ac6fe4d/tenor.gif',
-                     'https://media.tenor.com/images/adbb48575b54edaabd7383010bc2510a/tenor.gif',
-                     'https://tenor.com/view/dog-hug-bff-bestfriend-friend-gif-9512793',
-                     'https://tenor.com/view/hugday-gif-4954554',
-                     'https://tenor.com/view/big-hero6-baymax-feel-better-hug-hugging-gif-4782499',
-                     'https://tenor.com/view/hug-your-cat-day-hug-cat-gif-8723720',
-                     'https://media.tenor.com/images/adbb48575b54edaabd7383010bc2510a/tenor.gif',
-                     'https://cdn.discordapp.com/attachments/448285120634421278/633527959092854807/boy_oh_boy_i_love_hugs.jpg']
+                           'https://media.tenor.com/images/9164f10a0dbbf7cdb6aeb46184b16365/tenor.gif',
+                           'https://media.tenor.com/images/564eac526a8af795c90ce5985904096e/tenor.gif',
+                           'https://media.tenor.com/images/4d5a77b99ab86fc5e9581e15ffe34b5e/tenor.gif',
+                           'https://media.tenor.com/images/afbc39fcc4cbe67d9622f657d60d41cf/tenor.gif',
+                           'https://media.tenor.com/images/5d5565fe47af258d83b4caa2a668ccfa/tenor.gif',
+                           'https://media.tenor.com/images/4edcfcfa004403f844494025c5bf83da/tenor.gif',
+                           'https://media.tenor.com/images/c3759877cdcb86e25a1d305d5ac6fe4d/tenor.gif',
+                           'https://media.tenor.com/images/adbb48575b54edaabd7383010bc2510a/tenor.gif',
+                           'https://tenor.com/view/dog-hug-bff-bestfriend-friend-gif-9512793',
+                           'https://tenor.com/view/hugday-gif-4954554',
+                           'https://tenor.com/view/big-hero6-baymax-feel-better-hug-hugging-gif-4782499',
+                           'https://tenor.com/view/hug-your-cat-day-hug-cat-gif-8723720',
+                           'https://media.tenor.com/images/adbb48575b54edaabd7383010bc2510a/tenor.gif',
+                           'https://cdn.discordapp.com/attachments/448285120634421278/633527959092854807/boy_oh_boy_i_love_hugs.jpg']
         self.hug_hugs = ['(っ´▽｀)っ', '🤗', '⊂((・▽・))⊃', '＼(^o^)／', 'd=(´▽｀)=b', '⊂(◉‿◉)つ', '⊂（♡⌂♡）⊃',
                          '⊂( ◜◒◝ )⊃', '(づ｡◕‿‿◕｡)づ', '(づ￣ ³￣)づ', '(っ˘̩╭╮˘̩)っ', '⁽₍੭ ՞̑◞ළ̫̉◟՞̑₎⁾੭', '(੭ु｡╹▿╹｡)੭ु⁾⁾',
-                         '(*´σЗ`)σ', '(っ´∀｀)っ', 'c⌒っ╹v╹ )っ', '(σ･з･)σ', '(੭ु´･ω･`)੭ु⁾⁾', '(oﾟ▽ﾟ)o','༼つ ் ▽ ் ༽つ',
+                         '(*´σЗ`)σ', '(っ´∀｀)っ', 'c⌒っ╹v╹ )っ', '(σ･з･)σ', '(੭ु´･ω･`)੭ु⁾⁾', '(oﾟ▽ﾟ)o', '༼つ ் ▽ ் ༽つ',
                          '༼つ . •́ _ʖ •̀ . ༽つ', '╏つ ͜ಠ ‸ ͜ಠ ╏つ', '༼ つ ̥◕͙_̙◕͖ ͓༽つ', '༼ つ ◕o◕ ༽つ', '༼ つ ͡ ͡° ͜ ʖ ͡ ͡° ༽つ',
                          '(っಠ‿ಠ)っ', '༼ つ ◕_◕ ༽つ', 'ʕっ•ᴥ•ʔっ', '༼ つ ▀̿_▀̿ ༽つ', 'ʕ ⊃･ ◡ ･ ʔ⊃', '╏つ” ⊡ 〜 ⊡ ” ╏つ',
-                         '(⊃｡•́‿•̀｡)⊃', '(っ⇀⑃↼)っ', '(.づ◡﹏◡)づ.', '(.づσ▿σ)づ.',' (っ⇀`皿′↼)っ', '(.づ▣ ͜ʖ▣)づ.',
+                         '(⊃｡•́‿•̀｡)⊃', '(っ⇀⑃↼)っ', '(.づ◡﹏◡)づ.', '(.づσ▿σ)づ.', ' (っ⇀`皿′↼)っ', '(.づ▣ ͜ʖ▣)づ.',
                          '(つ ͡° ͜ʖ ͡°)つ', '(⊃ • ʖ̫ • )⊃', '(っ・∀・）っ', '(つ´∀｀)つ', '(っ*´∀｀*)っ', '(つ▀¯▀)つ',
                          '(つ◉益◉)つ', '(> ^_^ )>']
         self.ewan_images = ['https://i.pinimg.com/originals/4c/47/b9/4c47b9d5a2460f8a803a4535493a027c.gif',
@@ -155,4 +154,3 @@ class RNG(commands.Cog):
 def setup(bot):
     bot.add_cog(RNG(bot))
     bot.log.info('Loaded RNG cog')
-

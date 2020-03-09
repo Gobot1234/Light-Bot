@@ -19,8 +19,8 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE."""
+
 from traceback import format_exception
-from re import split
 
 
 def format_exec(exc):
@@ -28,10 +28,7 @@ def format_exec(exc):
 
 
 def format_error(error):
-    return split("During handling of the above exception, another exception occurred:|"
-                 "The above exception was the direct cause of the following exception:|"
-                 "Call stack:",
-                 "".join(format_exception(type(error), error, error.__traceback__)))[0]
+    return "".join(format_exception(type(error), error, error.__traceback__, limit=1))
 
 
 class Plural:

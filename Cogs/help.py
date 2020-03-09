@@ -1,20 +1,18 @@
-import pygit2
-import discord
-
+import difflib
 from asyncio import TimeoutError
-from datetime import datetime, timedelta, timezone
 from collections import Counter
-from humanize import naturalsize
+from datetime import datetime, timedelta, timezone
 from itertools import islice
 from platform import python_version
-from psutil import virtual_memory, cpu_percent, Process
 from re import split
 
+import discord
+import pygit2
 from discord.ext import commands
+from humanize import naturalsize
+from psutil import virtual_memory, cpu_percent, Process
 
 from Utils.time import human_timedelta
-
-# todo reorder imports and use from imports
 
 
 class HelpCommand(commands.HelpCommand):
@@ -55,7 +53,7 @@ class HelpCommand(commands.HelpCommand):
     def get_command_help(self, command) -> str:
         """Method to return a commands full description/doc string"""
         if not command.help:  # check if it has any brief or doc string
-            return 'There is no documentation for this command currently'
+            return 'There is currently no documentation for this command'
         else:
             return command.help.format(prefix=self.clean_prefix)
 
@@ -63,29 +61,15 @@ class HelpCommand(commands.HelpCommand):
         ctx = self.context
         bot = ctx.bot
         page = 0
-        cogs = []
-
-        for name, obj in bot.cogs.items():
-            try:
-                if await obj.cog_check(ctx):
-                    cogs.append(name)
-            except commands.CommandError:
-                pass
+        cogs = [name for name, obj in bot.cogs.items() if await discord.utils.maybe_coroutine(obj.cog_check, ctx)]
         cogs.sort()
 
         def check(reaction, user):  # check who is reacting to the message
             return user == ctx.author and help_embed.id == reaction.message.id
-
         embed = await self.bot_help_paginator(page, cogs)
-        help_embed = await ctx.send(embed=embed)  # sends the first help page
 
-        reactions = ('\N{BLACK LEFT-POINTING DOUBLE TRIANGLE WITH VERTICAL BAR}',
-                     '\N{BLACK LEFT-POINTING TRIANGLE}',
-                     '\N{BLACK RIGHT-POINTING TRIANGLE}',
-                     '\N{BLACK RIGHT-POINTING DOUBLE TRIANGLE WITH VERTICAL BAR}',
-                     '\N{BLACK SQUARE FOR STOP}',
-                     '\N{INFORMATION SOURCE}')  # add reactions to the message
-        bot.loop.create_task(self.bot_help_paginator_reactor(help_embed, reactions))
+        help_embed = await ctx.send(embed=embed)  # sends the first help page
+        bot.loop.create_task(self.bot_help_paginator_reactor(help_embed))
         # this allows the bot to carry on setting up the help command
 
         while 1:
@@ -151,14 +135,23 @@ class HelpCommand(commands.HelpCommand):
                     await help_embed.delete()
                     break
 
-    async def bot_help_paginator_reactor(self, message, reactions):
+    async def bot_help_paginator_reactor(self, message):
+        reactions = (
+            '\N{BLACK LEFT-POINTING DOUBLE TRIANGLE WITH VERTICAL BAR}',
+            '\N{BLACK LEFT-POINTING TRIANGLE}',
+            '\N{BLACK RIGHT-POINTING TRIANGLE}',
+            '\N{BLACK RIGHT-POINTING DOUBLE TRIANGLE WITH VERTICAL BAR}',
+            '\N{BLACK SQUARE FOR STOP}',
+            '\N{INFORMATION SOURCE}'
+        )  # add reactions to the message
         for reaction in reactions:
             await message.add_reaction(reaction)
 
     async def bot_help_paginator(self, page: int, cogs) -> discord.Embed:
         ctx = self.context
         bot = ctx.bot
-        all_commands = [command for command in await self.filter_commands(bot.commands)]  # filter the commands the user can use
+        all_commands = [command for command in
+                        await self.filter_commands(bot.commands)]  # filter the commands the user can use
         cog = bot.get_cog(cogs[page])  # get the current cog
 
         embed = discord.Embed(title=f'Help with {cog.qualified_name} ({len(all_commands)} commands)',
@@ -186,7 +179,8 @@ class HelpCommand(commands.HelpCommand):
 
         embed = discord.Embed(title=f'Help with {cog.qualified_name} ({len(cog_commands)} commands)',
                               description=cog.description,
-                              color=ctx.bot.config_cache[ctx.guild.id]['colour'] if ctx.guild else discord.Colour.blurple())
+                              color=ctx.bot.config_cache[ctx.guild.id][
+                                  'colour'] if ctx.guild else discord.Colour.blurple())
         embed.set_author(name=f'We are currently looking at the module {cog.qualified_name} and its commands',
                          icon_url=ctx.author.avatar_url)
         for c in cog_commands:
@@ -206,7 +200,8 @@ class HelpCommand(commands.HelpCommand):
 
         if await command.can_run(ctx):
             embed = discord.Embed(title=f'Help with `{command.name}`',
-                                  color=ctx.bot.config_cache[ctx.guild.id]['colour'] if ctx.guild else discord.Colour.blurple())
+                                  color=ctx.bot.config_cache[ctx.guild.id][
+                                      'colour'] if ctx.guild else discord.Colour.blurple())
             embed.set_author(
                 name=f'We are currently looking at the {command.cog.qualified_name} cog and its command {command.name}',
                 icon_url=ctx.author.avatar_url)
@@ -248,9 +243,15 @@ class HelpCommand(commands.HelpCommand):
 
     async def command_not_found(self, string):
         ctx = self.context
-        embed = discord.Embed(title='Error!',
-                              description=f'**Error 404:** Command or cog "{string}" not found ¯\_(ツ)_/¯',
-                              color=ctx.bot.config_cache[ctx.guild.id]['colour_bad'] if ctx.guild else discord.Colour.red())
+        command_names = [command.name for command in ctx.bot.commands]
+        close_commands = difflib.get_close_matches(string, command_names, len(command_names), 0)
+        joined = "\n".join(f'`{command}`' for command in close_commands[:2])
+
+        embed = discord.Embed(
+            title='Error!', description=f'**Error 404:** Command or category "{string}" not found ¯\_(ツ)_/¯\n'
+                                        f'Perhaps you meant:\n\n{joined}',
+            color=ctx.bot.config_cache[ctx.guild.id]['colour_bad'] if ctx.guild else discord.Colour.red()
+        )
         embed.add_field(name='The current loaded cogs are',
                         value=f'(`{"`, `".join([cog for cog in ctx.bot.cogs])}`) :gear:')
         await self.context.send(embed=embed)
@@ -268,9 +269,6 @@ class Help(commands.Cog):
 
     def cog_unload(self):
         self.bot.help_command = self._original_help_command
-
-    async def cog_check(self, ctx):
-        return True
 
     def get_uptime(self) -> str:
         delta_uptime = datetime.utcnow() - self.bot.launch_time
@@ -295,17 +293,19 @@ class Help(commands.Cog):
         return '\n'.join(self.format_commit(c) for c in commits)
 
     @commands.command(aliases=['info'])
-    async def stats(self, ctx   ):
-        memory_usage = self.process.memory_full_info().uss
+    async def stats(self, ctx):
+        # memory_usage = self.process.memory_full_info().uss
         rawram = virtual_memory()
         embed = discord.Embed(title=f'**{self.bot.user.name}** - Official Bot Server Invite & Bot information',
                               url='https://discord.gg/h8chCgW',
                               description=f'**Commands loaded & Cogs loaded:** `{len(self.bot.commands)}` commands loaded, '
                                           f'`{len(self.bot.cogs)}` cogs loaded :gear:\n\n'
                                           f'**Latest Changes:**\n{self.get_last_commits()}\n',
-                              colour=self.bot.config_cache[ctx.guild.id]['colour'] if ctx.guild else discord.Colour.blurple(),
+                              colour=self.bot.config_cache[ctx.guild.id][
+                                  'colour'] if ctx.guild else discord.Colour.blurple(),
                               timestamp=datetime.now())
         embed.set_author(name=str(self.bot.owner), icon_url=self.bot.owner.avatar_url)
+        embed.set_thumbnail(url=self.bot.user.avatar_url)
 
         # statistics
         total_bots = 0
@@ -358,8 +358,8 @@ class Help(commands.Cog):
                         value=f'{guilds} total servers\n{text + voice} total channels\n{text} text chanels\n{voice} voice channels')
         # pc info
         embed.add_field(name="<:compram:622622385182474254> RAM Usage",
-                        value=f'Using `{naturalsize(rawram[3])}` / `{naturalsize(rawram[0])}` `{round(rawram[3] / rawram[0] * 100, 2)}`% '
-                              f'of your physical memory and `{naturalsize(memory_usage)}` of which unique to this process.')
+                        value=f'Using `{naturalsize(rawram[3])}` / `{naturalsize(rawram[0])}` `{round(rawram[3] / rawram[0] * 100, 2)}`% ')
+        # f'of your physical memory and `{naturalsize(memory_usage)}` of which unique to this process.')
         embed.add_field(name='<:cpu:622621524418887680> CPU Usage',
                         value=f'`{cpu_percent()}`% used'
                               f'\n\n:arrow_up: Uptime\n {self.bot.user.mention} has been online for: {self.get_uptime()}')
@@ -393,8 +393,7 @@ class Help(commands.Cog):
     @commands.command()
     async def user(self, ctx, user: discord.Member):
         shared_guilds = [g for g in self.bot.guilds if g.get_member(ctx.author.id)]
-        perms = ' | '.join([perm for perm, val in
-                            dict(ctx.author.permissions_in(ctx.channel)).items() if val]).replace("_", " ")
+        perms = ' | '.join([perm for perm, val in dict(ctx.author.permissions_in(ctx.channel)).items() if val]).replace("_", " ")
 
     @commands.command(name='server-info', aliases=['serverinfo'])
     async def server(self, ctx, *, guild_id: int = None):
@@ -501,5 +500,3 @@ class Help(commands.Cog):
 
 def setup(bot):
     bot.add_cog(Help(bot))
-    bot.log.info('Loaded Help cog')
-

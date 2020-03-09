@@ -1,20 +1,15 @@
 import asyncio
 import importlib
-
-import discord
-from discord import Colour, Embed, File
-
-
 from contextlib import redirect_stdout
 from io import StringIO
 from os import remove
 from platform import python_version
-from traceback import print_exc
+from subprocess import getoutput
 from textwrap import indent
 from time import perf_counter
-from subprocess import getoutput
-from sys import stderr
 
+import discord
+from discord import Colour, Embed, File
 from discord.ext import commands, buttons
 
 from Utils.checks import is_guild_owner
@@ -30,10 +25,9 @@ class Owner(commands.Cog):
         self.bot = bot
         self.first = True
 
-    async def async__init__(self):
+    async def __ainit__(self):
         info = await self.bot.application_info()
         self.bot.owner = info.owner
-
         try:
             channel = self.bot.get_channel(int(open('channel.txt', 'r').read()))
             remove('channel.txt')
@@ -62,12 +56,6 @@ class Owner(commands.Cog):
             return is_guild_owner(ctx)
         return False
 
-    async def failed(self, ctx, extension, error):
-        await ctx.send(f'**`ERROR:`** `{extension}` ```py\n{format_error(error)}```')
-        print(f'Failed to load extension {extension}.', file=stderr)
-        print_exc(error)
-        raise error
-
     def cleanup_code(self, content):
         """Automatically removes code blocks from the code."""
         # remove ```py\n```
@@ -80,7 +68,7 @@ class Owner(commands.Cog):
     @commands.Cog.listener()
     async def on_ready(self):
         if self.first:
-            await self.async__init__()
+            await self.__ainit__()
             self.first = False
 
     @commands.Cog.listener()
@@ -93,38 +81,43 @@ class Owner(commands.Cog):
     @commands.command(aliases=['r'])
     @commands.is_owner()
     async def reload(self, ctx, *, extension=None):
-        """You probably don't need to use this, however it can be used to reload a cog
+        """Reload an extension
 
-        eg. `{prefix}reload loader`"""
+        eg. `{prefix}reload staff`"""
         await ctx.trigger_typing()
         if extension is None:
             reloaded = []
             failed = []
-            failed_exts = []
             for extension in self.bot.initial_extensions:
                 try:
                     self.bot.reload_extension(f'Cogs.{extension}')
+                    self.bot.dispatch('extension_reload', extension)
                 except commands.ExtensionNotLoaded:
                     try:
                         self.bot.load_extension(f'Cogs.{extension}')
+
                     except Exception as e:
-                        failed.append(f'<:goodcross:626829085682827266> `{extension}` - Failed\n'
-                                      f'```py\n{format_error(e)}```')
-                        failed_exts.append(extension)
+                        self.bot.dispatch('extension_fail', ctx, extension, e, send=False)
+                        failed.append((extension, e))
+
                     else:
+                        self.bot.dispatch('extension_load', extension)
                         reloaded.append(extension)
                 except Exception as e:
-                    failed.append(f'<:goodcross:626829085682827266> `{extension}` - Failed\n```py\n{format_error(e)}```')
+                    self.bot.dispatch('extension_fail', ctx, extension, e, send=False)
+                    failed.append((extension, e))
                 else:
+                    self.bot.dispatch('extension_load', extension)
                     reloaded.append(extension)
-            exc = f'\nFailed to load {len(failed_exts)} cog{"s" if len(failed_exts) > 1 else ""} ' \
-                  f'(`{"`, `".join(failed_exts)}`)' if len(failed_exts) > 0 else ""
+            exc = f'\nFailed to load {len(failed)} cog{"s" if len(failed) > 1 else ""} ' \
+                  f'(`{"`, `".join(fail[0] for fail in failed)}`)' if len(failed) > 0 else ""
             entries = ['\n'.join([f'<:tick:626829044134182923> `{r}`' for r in reloaded])]
             for f in failed:
-                entries.append(f)
-            reload = buttons.Paginator(title=f'Reloaded `{len(reloaded)}` cog{"s" if len(reloaded) > 1 else ""} {exc}',
-                                       colour=discord.Colour.blurple(), embed=True, timeout=90, entries=entries,
-                                       length=1)
+                entries.append(f'<:goodcross:626829085682827266> `{f[0]}` - Failed\n```py\n{format_error(f[1])}```')
+            reload = buttons.Paginator(
+                title=f'Reloaded `{len(reloaded)}` cog{"s" if len(reloaded) > 1 else ""} {exc}',
+                colour=discord.Colour.blurple(), entries=entries, length=1
+            )
             return await reload.start(ctx)
         try:
             self.bot.reload_extension(f'Cogs.{extension}')
@@ -132,13 +125,15 @@ class Owner(commands.Cog):
             if extension in self.bot.initial_extensions:
                 try:
                     self.bot.load_extension(f'Cogs.{extension}')
+                    self.bot.dispatch('extension_reload', extension)
+
                 except Exception as e:
-                    await self.failed(ctx, extension, e)
+                    self.bot.dispatch('extension_fail', ctx, extension, e)
                 else:
                     await ctx.send(f'**`SUCCESS`** <:tick:626829044134182923> `{extension}` has been loaded')
-            return
+
         except Exception as e:
-            await self.failed(ctx, extension, e)
+            self.bot.dispatch('extension_fail', ctx, extension, e)
         else:
             await ctx.send(f'**`SUCCESS`** <:tick:626829044134182923> `{extension}` has been reloaded')
 
@@ -287,7 +282,5 @@ class Owner(commands.Cog):
             await ctx.send(f"Reloaded module **{name}**")
 
 
-
 def setup(bot):
     bot.add_cog(Owner(bot))
-    bot.log.info('Loaded Owner cog')

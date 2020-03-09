@@ -1,12 +1,11 @@
 import asyncio
-import re
-import discord
-
 from collections import Counter
 from datetime import datetime, timedelta
-from psutil import Process
 from typing import Optional, Union
+
+import discord
 from discord.ext import commands, buttons
+from psutil import Process
 
 from Utils.time import UserFriendlyTime, human_timedelta
 
@@ -24,9 +23,11 @@ class Staff(commands.Cog):
         self.process = Process()
 
     async def cog_check(self, ctx):
-        return ctx.author.guild_permissions.ban_members or ctx.author.guild_permissions.kick_members \
-               or ctx.author.guild_permissions.manage_roles or ctx.author.permissions_in(ctx.channel).manage_messages \
-               or ctx.author.guild_permissions.manage_guild
+        if ctx.guild is None:
+            return False
+        return ctx.guild and ctx.author.guild_permissions.ban_members or \
+               ctx.author.guild_permissions.kick_members or ctx.author.guild_permissions.manage_roles or \
+               ctx.author.permissions_in(ctx.channel).manage_messages or ctx.author.guild_permissions.manage_guild
 
     async def unmute_timer(self, ctx, member, time: float):
         await asyncio.sleep(time)
@@ -142,7 +143,8 @@ class Staff(commands.Cog):
 
     @commands.group(invoke_without_command=True, aliases=['muted'])
     @commands.has_permissions(manage_roles=True)
-    async def mute(self, ctx, members: commands.Greedy[discord.Member], *, until: UserFriendlyTime(commands.clean_content)):
+    async def mute(self, ctx, members: commands.Greedy[discord.Member], *,
+                   until: UserFriendlyTime(commands.clean_content)):
         """
         Mute a user for a specific time
 
@@ -200,11 +202,13 @@ class Staff(commands.Cog):
     @commands.command()
     @commands.has_permissions(ban_members=True)
     @commands.bot_has_permissions(ban_members=True)
-    async def ban(self, ctx, members: commands.Greedy[discord.Member], reason: Optional[str] = 'None given', delete_days: Optional[int] = 0):
+    async def ban(self, ctx, members: commands.Greedy[discord.Member], reason: Optional[str] = 'None given',
+                  delete_days: Optional[int] = 0):
         """Ban users you need to be able to normally ban users to use this"""
-        if ctx.author in members:
-            return await ctx.channel.send('You cannot ban yourself, well you can try')
         for member in members:
+            if member == ctx.author:
+                await ctx.channel.send('You cannot ban yourself')
+                continue
             try:
                 await member.send(f'You have been banned from {ctx.guild.name} for {reason}')
             except discord.Forbidden:
@@ -221,6 +225,8 @@ class Staff(commands.Cog):
 
         You can use either an ID or a name with the discriminator eg.
         `{prefix}unban Gobot1234#2435`
+        or
+        `{prefix}unban Gobot1234
         or
         `{prefix}unban 340869611903909888`
         """
@@ -240,9 +246,10 @@ class Staff(commands.Cog):
                     except discord.Forbidden:
                         pass
             else:
-                if user.isdigit():  # check if its an id makes things simpler
+
+                if str(user).isdigit():  # check if its an id makes things simpler
                     try:
-                        await ctx.guild.unban(discord.Object(user))
+                        await ctx.guild.unban(discord.Object(int(user)))
                     except discord.Forbidden:
                         raise commands.UserInputError(f'User {user} not found? Double check your ID or name '
                                                       f'again or perhaps they aren\'t banned')
@@ -250,7 +257,7 @@ class Staff(commands.Cog):
                         await ctx.send(f'<@{user}> has been unbanned!')
                 else:
                     for reason, banned_user in bans:
-                        if banned_user == user:
+                        if banned_user.name == user:
                             await ctx.guild.unban(banned_user)
                             await ctx.send(f'{banned_user.mention} has been unbanned!')
                             try:
@@ -320,15 +327,16 @@ class Staff(commands.Cog):
                                            server=ctx.guild.name,
                                            m_member=ctx.author.mention)
 
-        await ctx.send(f'Set your join message to\n{f_welcome_msg}')
+        await ctx.send(f'Set your join message to\n>>> {f_welcome_msg}')
 
     @commands.group(invoke_without_subcommand=True, aliases=['prefixes'])
     @commands.has_permissions(manage_guild=True)
     async def prefix(self, ctx):
         """View your current prefixes by just typing {prefix}prefix"""
         if ctx.invoked_subcommand is None:
-            await ctx.send(f'Your current prefixes are `{"`, `".join(self.bot.config_cache[ctx.guild.id]["prefixes"])}` '
-                           f'& {self.bot.user.mention}')
+            await ctx.send(
+                f'Your current prefixes are `{"`, `".join(self.bot.config_cache[ctx.guild.id]["prefixes"])}` '
+                f'& {self.bot.user.mention}')
 
     @prefix.command()
     async def add(self, ctx, prefix: str):

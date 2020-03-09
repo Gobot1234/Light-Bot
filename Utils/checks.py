@@ -5,7 +5,8 @@ def is_guild_owner(ctx):
     if ctx.author == (ctx.guild.owner or ctx.bot.owner):
         return True
     else:
-        raise NotGuildOwner(f'You are not the owner of this guild contact {ctx.guild.owner} if a command needs to be performed')
+        raise NotGuildOwner(
+            f'You are not the owner of this guild contact {ctx.guild.owner} if a command needs to be performed')
 
 
 def is_agsb_guild(ctx):

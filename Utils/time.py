@@ -21,11 +21,13 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE."""
 
 import datetime
+import re
+
 import parsedatetime as pdt
 from dateutil.relativedelta import relativedelta
-from .formats import Plural, human_join
 from discord.ext import commands
-import re
+
+from .formats import Plural, human_join
 
 
 class Timer:
