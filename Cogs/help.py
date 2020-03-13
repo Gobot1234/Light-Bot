@@ -249,7 +249,7 @@ class HelpCommand(commands.HelpCommand):
 
         embed = discord.Embed(
             title='Error!', description=f'**Error 404:** Command or category "{string}" not found ¯\_(ツ)_/¯\n'
-                                        f'Perhaps you meant:\n\n{joined}',
+                                        f'Perhaps you meant:\n{joined}',
             color=ctx.bot.config_cache[ctx.guild.id]['colour_bad'] if ctx.guild else discord.Colour.red()
         )
         embed.add_field(name='The current loaded cogs are',

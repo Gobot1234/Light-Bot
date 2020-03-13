@@ -1,6 +1,5 @@
-import asyncio
 from collections import Counter
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional, Union
 
 import discord
@@ -25,29 +24,24 @@ class Staff(commands.Cog):
     async def cog_check(self, ctx):
         if ctx.guild is None:
             return False
-        return ctx.guild and ctx.author.guild_permissions.ban_members or \
-               ctx.author.guild_permissions.kick_members or ctx.author.guild_permissions.manage_roles or \
-               ctx.author.permissions_in(ctx.channel).manage_messages or ctx.author.guild_permissions.manage_guild
+        return ctx.author.guild_permissions.ban_members or ctx.author.guild_permissions.kick_members or \
+               ctx.author.guild_permissions.manage_roles or ctx.author.permissions_in(ctx.channel).manage_messages or \
+               ctx.author.guild_permissions.manage_guild
 
-    async def unmute_timer(self, ctx, member, time: float):
-        await asyncio.sleep(time)
-        await member.remove_roles(discord.utils.get(member.guild.roles, name='Muted'))
-        await ctx.send(f'Un-muted member {member.display_name}')
+    async def unmute_timer(self, ctx, member, time: datetime):
+        await discord.utils.sleep_until(time)
+        try:
+            await member.remove_roles(discord.utils.get(member.guild.roles, name='Muted'))
+        except discord.Forbidden:
+            pass
+        else:
+            await ctx.send(f'Un-muted member {member.display_name}')
 
-    async def do_removal(self, ctx, limit, predicate, *, before=None, after=None):
+    async def do_removal(self, ctx, limit, predicate):
         if limit > 2000:
             return await ctx.send(f'Too many messages to search given ({limit}/2000)')
-
-        if before is None:
-            before = ctx.message
-        else:
-            before = discord.Object(id=before)
-
-        if after is not None:
-            after = discord.Object(id=after)
-
         try:
-            deleted = await ctx.channel.purge(limit=limit, before=before, after=after, check=predicate)
+            deleted = await ctx.channel.purge(limit=limit, before=ctx.message, check=predicate)
         except discord.Forbidden:
             return await ctx.send('I do not have permissions to delete messages.')
         except discord.HTTPException as e:
@@ -165,14 +159,13 @@ class Staff(commands.Cog):
         for member in members:
             if member == (ctx.author or self.bot.user):
                 return await ctx.send('Why would you do that???', delete_after=3)
-            bot_delta = timedelta.total_seconds(until.dt - datetime.utcnow())
             human_delta = human_timedelta(until.dt)
             await ctx.send(
                 f'Muted `{member.display_name}`, for reason `{until.arg}`, they will be un-muted in `{human_delta}`')
             await member.add_roles(muted, reason=until.arg)
             for channel in ctx.guild.channels:
                 await channel.set_permissions(muted, read_messages=True, send_messages=False, add_reactions=False)
-            await self.unmute_timer(ctx, member, bot_delta)
+            await self.unmute_timer(ctx, member, until.dt)
 
     @mute.command(name='list')
     async def mutelist(self, ctx):

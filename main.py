@@ -71,12 +71,11 @@ class Light(commands.Bot):
 
     async def on_command(self, ctx):
         self.log.info(
-            f'''
-            Author : "{ctx.author}" - "{ctx.author.id}"\n
-            Guild  : "{ctx.guild.name if ctx.guild else 'DMS'}" - {f"{ctx.guild.id}" if ctx.guild else ''}\n
-            Channel: "{ctx.channel.name if ctx.guild else 'DMS'}" - {f"{ctx.channel.id}" if ctx.guild else ''}\n
-            Message: "{ctx.message.clean_content}"
-            '''
+            f'''Author : "{ctx.author}" - "{ctx.author.id}"
+                                         Guild  : "{ctx.guild.name if ctx.guild else 'DMS'}" - {f"{ctx.guild.id}" if ctx.guild else ''}
+                                         Channel: "{ctx.channel.name if ctx.guild else 'DMS'}" - {f"{ctx.channel.id}" if ctx.guild else ''}
+                                         Message: "{ctx.message.clean_content}"
+            '''  # this excessive spacing is for nice logging
         )
 
     async def on_extension_load(self, extension):

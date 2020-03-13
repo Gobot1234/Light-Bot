@@ -48,7 +48,7 @@ class Listeners(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild):
-        # ask the owner what features they want
+        # TODO ask the owner what features they want
         try:
             blacklisted = await self.bot.db.fetch(
                 """
@@ -56,7 +56,8 @@ class Listeners(commands.Cog):
                 WHERE guild_id = $1;
                 """, guild.id)
         except asyncpg.UndefinedColumnError:
-            await self.bot.db.execute("""
+            await self.bot.db.execute(
+                """
                 INSERT INTO config(
                     guild_id, blacklisted,
                     prefixes, colour,
@@ -66,7 +67,8 @@ class Listeners(commands.Cog):
                     )
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 """, guild.id, False, ['='], discord.Colour.blurple().value, discord.Colour.red().value,
-                                      discord.Colour.green().value, None, None, [])
+                discord.Colour.green().value, None, None, []
+            )
             self.bot.config_cache[guild.id] = {
                 "blacklisted": False,
                 "prefixes": ['='],
@@ -80,51 +82,55 @@ class Listeners(commands.Cog):
 
         else:
             if blacklisted is True:
-                self.bot.log.info(f'Leaving {guild.name} - {guild.id}, blacklisted guild')
+                self.bot.log.info(f'Leaving "{guild.name}" - "{guild.id}" as it is a blacklisted guild')
                 return await guild.leave()
         embed = discord.Embed(title='<:tick:626829044134182923> Server added!',
                               description='Thank you for adding me to your server!\n'
                                           'Type `=help` to view my commands', color=discord.Colour.green(),
                               timestamp=datetime.utcnow())
         embed.set_footer(text=f'Joined')
-        m = False
+        m = None
         for channel in guild.text_channels:
             try:
                 m = await channel.send(embed=embed)
             except discord.Forbidden:
-                pass
+                continue
             else:
-                break
-        if not m:
+                return
+        if not isinstance(m, discord.Message):
+            perms = {
+                "view_audit_log": True,
+                "manage_roles": True,
+                "manage_channels": True,
+                "kick_members": True,
+                "ban_members": True,
+                "change_nickname": True,
+                "manage_nicknames": True,
+                "send_messages": True,
+                "manage_messages": True,
+                "embed_links": True,
+                "attach_files": True,
+                "read_message_history": True,
+                "use_external_emojis": True,
+                "connect": True,
+                "speak": True
+            }
+            discord_perms = discord.Permissions(**perms)
+            pretty_perms = [f'• {perm_name.replace("_", " ").title()}' for perm_name, value in list(perms.items())]
+            pretty_perms.insert(0, '**General**\n')
+            pretty_perms.insert(8, '\n**Text Channels**\n')
+            pretty_perms.insert(15, '\n**Voice Permissions**\n')
+            pretty_perms = '\n'.join(pretty_perms)
+
+            embed.add_field(name=f'I cannot send messages in {guild}. '
+                                 f'Please can I have these permissions:',
+                            value=f'{pretty_perms}\n\n'
+                                  f'Or re-invite me with the link [here]'
+                                  f'({discord.utils.oauth_url(self.bot.user.id, discord_perms, guild)})')
             try:
-                embed.add_field(name='Please can I have these permissions:',
-                                value='**General**\n\n'
-                                      '• View Audit Log\n'
-                                      '• Manage Roles\n'
-                                      '• Manage Channels\n'
-                                      '• Kick Members\n'
-                                      '• Ban Members\n'
-                                      '• Change Nickname\n'
-                                      '• Manage Nickname\n'
-                                      '• View Channels\n\n'
-                                      '**Text Channels**\n\n'
-                                      '• Send Messages\n'
-                                      '• Manage Messages\n'
-                                      '• Embed Links\n'
-                                      '• Attach Files\n'
-                                      '• Read Message History\n'
-                                      '• Use External Emojis\n'
-                                      '• Add Reactions\n\n'
-                                      '**Voice Permissions**\n\n'
-                                      '• Connect\n'
-                                      '• Speak\n'
-                                      '• Use Voice activity\n\n'
-                                      'Or use the link [here](https://discordapp.com/api/oauth2/authorize?client_id=630'
-                                      '008145162272778&permissions=506850518&scope=bot)')
                 await guild.owner.send(embed=embed)
             except discord.Forbidden:
-                pass
-
+                return
         await self.bot.owner.send(self.bot.config_cache)
 
     @commands.Cog.listener()
@@ -133,7 +139,8 @@ class Listeners(commands.Cog):
             """
             DELETE FROM config
             WHERE guild_id = $1;
-            """, guild.id)
+            """, guild.id
+        )
         self.bot.config_cache.pop(guild.id)
         self.bot.log.info(f'Leaving guild {guild.name} - {guild.id}')
 
@@ -152,8 +159,8 @@ class Listeners(commands.Cog):
         if guild_settings['join_message']:
             welcome_msg = guild_settings['welcome message'].replace('@member', 'm_member')
 
-            f_welcome_msg = welcome_msg.format(member=member.name,
-                                               server=member.guild.name,
+            f_welcome_msg = welcome_msg.format(member=member,
+                                               server=member.guild,
                                                m_member=member.mention)
             await member.send(f_welcome_msg)
         # role_list = guild_settings['member role list'][m_id]
@@ -162,8 +169,7 @@ class Listeners(commands.Cog):
             reason = f'Adding back old roles as requested by {member.guild.owner}'
             role_list = role_list[m_id]
             for role in role_list:
-                await member.add_roles(discord.utils.get(member.guild.roles, name=role), reason=reason)
-                await asyncio.sleep(5)
+                await member.edit(discord.utils.get(member.guild.roles, name=role), reason=reason)
         elif guild_settings['auto roling']:
             role = guild_settings['auto_roling']
             reason = f'Autoroled as requested by {member.guild.owner}'
@@ -338,7 +344,7 @@ class Listeners(commands.Cog):
         if self.bot.config_cache[message.guild.id]['logged_events']:
             split_message = re.split("(?:(?:[^a-zA-Z0-9]+)|(?:'[^a-zA-Z0-9]+))|(?:[^a-zA-Z0-9]+)",
                                      # split at non alpha-numeric characters
-                                     unidecode.unidecode(message.clean_content.lower()))  # normalise unicode
+                                     unidecode.unidecode(message.content.lower()))  # normalise unicode
             rejoined = ''.join(split_message)
             matched = re.search(f'({"|".join(self.bot.config_cache[message.guild.id]["logged_events"])})+', rejoined)
             if matched:
