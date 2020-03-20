@@ -224,11 +224,11 @@ class Owner(commands.Cog):
             if any([word in add.split() for word in errored]):
                 await message.add_reaction(ctx.emoji.cross)
                 await message.remove_reaction(ctx.emoji.loading, ctx.guild.me)
-                embed.description += f'{ctx.emoji.cross} **Add result:**```js\n{add}```'
+                embed.description += f'{ctx.emoji.cross} **Add result:**```js\n{add}```\n'
                 return await message.edit(embed=embed)
             else:
                 add = f'```js\n{add}```' if add else ''
-                embed.description += f'{ctx.emoji.tick} **Add result:**{add}'
+                embed.description += f'{ctx.emoji.tick} **Add result:**{add}\n'
             await message.edit(embed=embed)
 
         commit = await self.bot.loop.run_in_executor(None, getoutput, f'git commit -m "{commit_msg}"')
