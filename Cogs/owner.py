@@ -219,7 +219,7 @@ class Owner(commands.Cog):
         message = await ctx.send(embed=embed)
         await message.add_reaction(ctx.emoji.loading)
         add = await self.bot.loop.run_in_executor(None, getoutput, 'git add .')
-        if any([add.split() in errored]):
+        if any(word in add for word in errored):
             await ctx.bool(False)
             embed.description = f'**Add result:**\n{ctx.emoji.cross} ```js\n{add}```'
             return await message.edit(embed=embed)
