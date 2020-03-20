@@ -8,6 +8,7 @@ from textwrap import indent
 from time import perf_counter
 
 import discord
+import typing
 from discord.ext import commands, buttons
 
 from Utils.checks import is_mod
@@ -212,16 +213,28 @@ class Owner(commands.Cog):
             await ctx.send_help(ctx.command)
 
     @git.command()
-    async def push(self, ctx, *, commit_msg='None given'):
+    async def push(self, ctx, add_first: typing.Optional[bool], *, commit_msg='None given'):
         """Push changes to the GitHub repo"""
         errored = ('fatal', 'error')
-        embed = discord.Embed(title='GitHub push', colour=get_colour(ctx))
+        embed = discord.Embed(title='GitHub Commit & Push', description='', colour=get_colour(ctx))
         message = await ctx.send(embed=embed)
         await message.add_reaction(ctx.emoji.loading)
+        if add_first:
+            add = await self.bot.loop.run_in_executor(None, getoutput, 'git add .')
+            if any([word in add.split() for word in errored]):
+                await message.add_reaction(ctx.emoji.cross)
+                await message.remove_reaction(ctx.emoji.loading, ctx.guild.me)
+                embed.description += f'{ctx.emoji.cross} **Add result:**```js\n{add}```'
+                return await message.edit(embed=embed)
+            else:
+                add = f'```js\n{add}```' if add else ''
+                embed.description += f'{ctx.emoji.tick} **Add result:**{add}'
+            await message.edit(embed=embed)
 
         commit = await self.bot.loop.run_in_executor(None, getoutput, f'git commit -m "{commit_msg}"')
         if any([word in commit.split() for word in errored]):
-            await ctx.bool(False)
+            await message.add_reaction(ctx.emoji.cross)
+            await message.remove_reaction(ctx.emoji.loading, ctx.guild.me)
             embed.description = f'{ctx.emoji.cross} **Commit result:**```js\n{commit}```'
             return await message.edit(embed=embed)
         else:
@@ -230,25 +243,45 @@ class Owner(commands.Cog):
 
         push = await self.bot.loop.run_in_executor(None, getoutput, 'git push')
         if any([word in push.split() for word in errored]):
-            await ctx.bool(False)
+            await message.add_reaction(ctx.emoji.cross)
+            await message.remove_reaction(ctx.emoji.loading, ctx.guild.me)
             embed.description += f'\n{ctx.emoji.cross} **Push result:**```js\n{push}```'
             return await message.edit(embed=embed)
         else:
-            await ctx.bool(True)
+            await message.add_reaction(ctx.emoji.tick)
             embed.description += f'\n{ctx.emoji.tick} **Push result:**```js\n{push}```'
 
+        await message.remove_reaction(ctx.emoji.loading, ctx.guild.me)
         await message.edit(embed=embed)
 
     @git.command()
-    async def pull(self, ctx):
-        """Pull from the GitHub repo"""
-        await ctx.message.add_reaction('<a:loading:661210169870516225>')
-        reset = await self.bot.loop.run_in_executor(None, getoutput, 'git reset --hard HEAD')
+    async def pull(self, ctx, hard: bool = False):
+        """Pull any changes from the GitHub repo"""
+        errored = ('fatal', 'error')
+        embed = discord.Embed(title=f'GitHub {"Hard" if hard else ""} Pull', description='', colour=get_colour(ctx))
+        message = await ctx.send(embed=embed)
+        await message.add_reaction(ctx.emoji.loading)
+        if hard:
+            reset = await self.bot.loop.run_in_executor(None, getoutput, 'git reset --hard HEAD')
+            if any([word in reset.split() for word in errored]):
+                await message.add_reaction(ctx.emoji.cross)
+                await message.remove_reaction(ctx.emoji.loading, ctx.guild.me)
+                embed.description += f'\n{ctx.emoji.cross} **Reset result:**```js\n{reset}```'
+                return await message.edit(embed=embed)
+            else:
+                embed.description += f'\n{ctx.emoji.tick} **Reset result:**```js\n{reset}```'
         pull = await self.bot.loop.run_in_executor(None, getoutput, 'git pull')
-        await ctx.message.add_reaction(':tick:626829044134182923')
-        out = buttons.Paginator(title=f'GitHub pull output', colour=self.bot.color, embed=True, timeout=90,
-                                entries=[f'**Reset:** ```js\n{reset}```', f'**Pull:** ```js\n{pull}```'])
-        await out.start(ctx)
+        if any([word in pull.split() for word in errored]):
+            await message.add_reaction(ctx.emoji.cross)
+            await message.remove_reaction(ctx.emoji.loading, ctx.guild.me)
+            embed.description += f'\n{ctx.emoji.cross} **Pull result:**```js\n{pull}```'
+            return await message.edit(embed=embed)
+        else:
+            await ctx.bool(True)
+            embed.description += f'\n{ctx.emoji.tick} **Pull result:**```js\n{pull}```'
+        await message.remove_reaction(ctx.emoji.loading, ctx.guild.me)
+        await message.edit(embed=embed)
+
 
     @commands.command()
     @commands.is_owner()
@@ -258,7 +291,7 @@ class Owner(commands.Cog):
             module_name = importlib.import_module(f"Utils.{name}")
             importlib.reload(module_name)
         except ModuleNotFoundError:
-            return await ctx.send(f'Couldn\'t find module named **{name}**')
+            return await ctx.send(f'Couldn\'t find module named **{name}** in Utils.')
         except Exception as e:
             await ctx.send(f'Module **{name}** returned error and was not reloaded...\n```py\n{format_error(e)}```')
         else:
