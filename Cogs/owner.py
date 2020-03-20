@@ -219,7 +219,7 @@ class Owner(commands.Cog):
         message = await ctx.send(embed=embed)
         await message.add_reaction(ctx.emoji.loading)
         add = await self.bot.loop.run_in_executor(None, getoutput, 'git add .')
-        if any(word in add for word in errored):
+        if any([word in add.split() for word in errored]):
             await ctx.bool(False)
             embed.description = f'**Add result:**\n{ctx.emoji.cross} ```js\n{add}```'
             return await message.edit(embed=embed)
@@ -227,7 +227,7 @@ class Owner(commands.Cog):
             embed.description = f'**Add result:**\n{ctx.emoji.tick} ```js\n{add}```'
 
         commit = await self.bot.loop.run_in_executor(None, getoutput, f'git commit -m "{commit_msg}"')
-        if errored in commit:
+        if any([word in commit.split() for word in errored]):
             await ctx.bool(False)
             embed.description += f'\n**Commit result:**\n{ctx.emoji.cross} ```js\n{commit}```'
             return await message.edit(embed=embed)
@@ -236,7 +236,7 @@ class Owner(commands.Cog):
         await message.edit(embed=embed)
 
         push = await self.bot.loop.run_in_executor(None, getoutput, 'git push')
-        if errored in commit:
+        if any([word in push.split() for word in errored]):
             await ctx.bool(False)
             embed.description += f'\n**Push result:**\n{ctx.emoji.cross} ```js\n{push}```'
             return await message.edit(embed=embed)
