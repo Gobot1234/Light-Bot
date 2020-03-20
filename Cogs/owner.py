@@ -218,33 +218,24 @@ class Owner(commands.Cog):
         embed = discord.Embed(title='GitHub push', colour=get_colour(ctx))
         message = await ctx.send(embed=embed)
         await message.add_reaction(ctx.emoji.loading)
-        add = await self.bot.loop.run_in_executor(None, getoutput, 'git add .')
-        if any([word in add.split() for word in errored]):
-            await ctx.bool(False)
-            embed.description = f'**Add result:**\n{ctx.emoji.cross} ```js\n{add}```'
-            return await message.edit(embed=embed)
-        else:
-            add = f'```js\n{add}```' if add else ''
-            embed.description = f'**Add result:**\n{ctx.emoji.tick} '
 
         commit = await self.bot.loop.run_in_executor(None, getoutput, f'git commit -m "{commit_msg}"')
         if any([word in commit.split() for word in errored]):
             await ctx.bool(False)
-            embed.description += f'\n**Commit result:**\n{ctx.emoji.cross} ```js\n{commit}```'
+            embed.description = f'{ctx.emoji.cross} **Commit result:**```js\n{commit}```'
             return await message.edit(embed=embed)
         else:
-            embed.description += f'\n**Commit result:**\n{ctx.emoji.tick} ```js\n{commit}```'
+            embed.description = f'{ctx.emoji.tick} **Commit result:**```js\n{commit}```'
         await message.edit(embed=embed)
 
         push = await self.bot.loop.run_in_executor(None, getoutput, 'git push')
         if any([word in push.split() for word in errored]):
             await ctx.bool(False)
-            embed.description += f'\n**Push result:**\n{ctx.emoji.cross} ```js\n{push}```'
+            embed.description += f'\n{ctx.emoji.cross} **Push result:**```js\n{push}```'
             return await message.edit(embed=embed)
-
         else:
             await ctx.bool(True)
-            embed.description += f'\n**Push result:**\n{ctx.emoji.tick} ```js\n{push}```'
+            embed.description += f'\n{ctx.emoji.tick} **Push result:**```js\n{push}```'
 
         await message.edit(embed=embed)
 
