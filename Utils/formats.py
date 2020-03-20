@@ -31,6 +31,20 @@ def format_error(error):
     return "".join(format_exception(type(error), error, error.__traceback__, limit=1))
 
 
+def human_join(seq, delimiter=', ', final='or'):
+    size = len(seq)
+    if size == 0:
+        return ''
+
+    if size == 1:
+        return seq[0]
+
+    if size == 2:
+        return f'{seq[0]} {final} {seq[1]}'
+
+    return f'{delimiter.join(seq[:-1])} {final} {seq[-1]}'
+
+
 class Plural:
     def __init__(self, value):
         self.value = value
@@ -42,20 +56,6 @@ class Plural:
         if abs(v) != 1:
             return f'{v} {plural}'
         return f'{v} {singular}'
-
-
-def human_join(seq, delim=', ', final='or'):
-    size = len(seq)
-    if size == 0:
-        return ''
-
-    if size == 1:
-        return seq[0]
-
-    if size == 2:
-        return f'{seq[0]} {final} {seq[1]}'
-
-    return delim.join(seq[:-1]) + f' {final} {seq[-1]}'
 
 
 class TabularData:

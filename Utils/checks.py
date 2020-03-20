@@ -1,24 +1,80 @@
-from discord.ext.commands import CommandError
+from discord.ext import commands
 
 
-def is_guild_owner(ctx):
-    if ctx.author == (ctx.guild.owner or ctx.bot.owner):
+async def check_permissions(ctx, perms, *, check=all):
+    is_owner = await ctx.bot.is_owner(ctx.author)
+    if is_owner:
         return True
-    else:
-        raise NotGuildOwner(
-            f'You are not the owner of this guild contact {ctx.guild.owner} if a command needs to be performed')
+
+    resolved = ctx.channel.permissions_for(ctx.author)
+    return check(getattr(resolved, name, None) == value for name, value in perms.items())
 
 
-def is_agsb_guild(ctx):
-    if ctx.guild.id == 376064130118844416:
+def has_permissions(*, check=all, **perms):
+    async def pred(ctx):
+        return await check_permissions(ctx, perms, check=check)
+
+    return commands.check(pred)
+
+
+async def check_guild_permissions(ctx, perms, *, check=all):
+    is_owner = await ctx.bot.is_owner(ctx.author)
+    if is_owner:
         return True
-    else:
-        raise NotAGSBSever('You are not in the AGSB server so this command cannot be used')
+
+    if ctx.guild is None:
+        return False
+
+    resolved = ctx.author.guild_permissions
+    return check(getattr(resolved, name, None) == value for name, value in perms.items())
 
 
-class NotGuildOwner(CommandError):
-    """Custom Exception class for Guild Owner Commands"""
+def has_guild_permissions(*, check=all, **perms):
+    async def pred(ctx):
+        return await check_guild_permissions(ctx, perms, check=check)
+
+    return commands.check(pred)
 
 
-class NotAGSBSever(CommandError):
-    """Custom Exception class to check if its the AGSB server"""
+# These do not take channel overrides into account
+
+def is_mod():
+    async def pred(ctx):
+        return await check_guild_permissions(ctx, {'manage_guild': True})
+
+    return commands.check(pred)
+
+
+def is_admin():
+    async def pred(ctx):
+        return await check_guild_permissions(ctx, {'administrator': True})
+
+    return commands.check(pred)
+
+
+def mod_or_permissions(**perms):
+    perms['manage_guild'] = True
+
+    async def predicate(ctx):
+        return await check_guild_permissions(ctx, perms, check=any)
+
+    return commands.check(predicate)
+
+
+def admin_or_permissions(**perms):
+    perms['administrator'] = True
+
+    async def predicate(ctx):
+        return await check_guild_permissions(ctx, perms, check=any)
+
+    return commands.check(predicate)
+
+
+class NoChannelProvided(commands.CommandError):
+    """Error raised when no suitable voice channel was supplied."""
+    pass
+
+
+class IncorrectChannelError(commands.CommandError):
+    """Error raised when commands are issued outside of the players session channel."""
+    pass

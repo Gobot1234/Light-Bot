@@ -7,7 +7,8 @@ import discord
 import unidecode
 from discord.ext import commands, tasks
 
-from Utils.formats import format_error
+from Utils.converters import get_colour
+from Utils.formats import format_error, format_exec
 
 
 class Listeners(commands.Cog):
@@ -54,7 +55,8 @@ class Listeners(commands.Cog):
                 """
                 SELECT blacklisted FROM config
                 WHERE guild_id = $1;
-                """, guild.id)
+                """, guild.id
+            )
         except asyncpg.UndefinedColumnError:
             await self.bot.db.execute(
                 """
@@ -66,8 +68,8 @@ class Listeners(commands.Cog):
                     logged_events
                     )
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                """, guild.id, False, ['='], discord.Colour.blurple().value, discord.Colour.red().value,
-                discord.Colour.green().value, None, None, []
+                """, guild.id, False, ['='], discord.Colour.blurple().value,
+                discord.Colour.red().value, discord.Colour.green().value, None, None, []
             )
             self.bot.config_cache[guild.id] = {
                 "blacklisted": False,
@@ -84,11 +86,10 @@ class Listeners(commands.Cog):
             if blacklisted is True:
                 self.bot.log.info(f'Leaving "{guild.name}" - "{guild.id}" as it is a blacklisted guild')
                 return await guild.leave()
-        embed = discord.Embed(title='<:tick:626829044134182923> Server added!',
+        embed = discord.Embed(title=':tick:688829439659737095 Server added!',
                               description='Thank you for adding me to your server!\n'
-                                          'Type `=help` to view my commands', color=discord.Colour.green(),
-                              timestamp=datetime.utcnow())
-        embed.set_footer(text=f'Joined')
+                                          'Type `=help` to view my commands', color=discord.Colour.green())
+        embed.set_footer(text='Joined').timestamp = datetime.now()
         m = None
         for channel in guild.text_channels:
             try:
@@ -150,19 +151,18 @@ class Listeners(commands.Cog):
         {member} - The user's name
         {server} - The server name
         {@member} - Mentions the user
-        #channel - Mention a channel
+        #channel - Mention a channel the normal way
         """
         # TODO check if a member joined before check if they want autoroling after leaving
 
         guild_settings = self.bot.config_cache[member.guild.id]
 
         if guild_settings['join_message']:
-            welcome_msg = guild_settings['welcome message'].replace('@member', 'm_member')
+            msg = guild_settings['join_message'] \
+                .replace('{{member}}', member.name).replace('{{@member}}', member.mention) \
+                .replace('{{server}}', member.guild.name)
+            await member.send(msg)
 
-            f_welcome_msg = welcome_msg.format(member=member,
-                                               server=member.guild,
-                                               m_member=member.mention)
-            await member.send(f_welcome_msg)
         # role_list = guild_settings['member role list'][m_id]
         '''
         if m_id in role_list:  # add back their old roles if there are any in the users.json
@@ -179,18 +179,18 @@ class Listeners(commands.Cog):
 
     @commands.Cog.listener()
     async def on_member_ban(self, guild, user):
-        if 'member_ban' in self.bot.config_cache[user.guild.id]['logged_events']:
+        if 'member_ban' in self.bot.config_cache[guild.id]['logged_events']:
             embed = discord.Embed(title=user,
-                                  description=f'{user.name} - {user.id} was banned from {guild.name} - {guild.id}',
+                                  description=f'{user} - {user.id} was banned from {guild} - {guild.id}',
                                   color=discord.Color.red())
             embed.set_footer(text=f'ID: {user.id} • {datetime.now().strftime("%c")}', icon_url=user.avatar_url)
             await self.bot.config_cache[user.guild.id]['logging_channel'].send(embed=embed)
 
     @commands.Cog.listener()
     async def on_member_kick(self, guild, user):
-        if 'member_kick' in self.bot.config_cache[user.guild.id]['logged_events']:
+        if 'member_kick' in self.bot.config_cache[guild.id]['logged_events']:
             embed = discord.Embed(title=user,
-                                  description=f'{user.name}-{user.id} was kicked from {guild.name}-{guild.id}',
+                                  description=f'{user}-{user.id} was kicked from {guild} - {guild.id}',
                                   color=discord.Color.red())
             embed.set_footer(text=f'ID: {user.id} • {datetime.now().strftime("%c")}', icon_url=user.avatar_url)
             await self.bot.config_cache[user.guild.id]['logging_channel'].send(embed=embed)
@@ -207,6 +207,7 @@ class Listeners(commands.Cog):
 
     @commands.Cog.listener()
     async def on_raw_message_delete(self, payload):
+        channel = None
         message = payload.cached_message
         if message is None:
             channel = self.bot.get_channel(payload.channel_id)
@@ -215,15 +216,15 @@ class Listeners(commands.Cog):
             if 'message_deletes' in self.bot.config_cache[guild.id]['logged_events']:
                 if message is None:
                     embed = discord.Embed(description=f'**Message deleted in: {channel.mention}**',
-                                          color=discord.Color.red())
+                                          color=get_colour(colour='bad_colour', message=message, bot=self.bot))
                     embed.set_footer(text=f'{datetime.now().strftime("%c")}')
                     return await self.bot.config_cache[guild.id]['logging_channel'].send(embed=embed)
-                author = message.author
-                if author.bot:
+
+                if message.author.bot:
                     return
                 embed = discord.Embed(title='Message deleted', color=discord.Color.red())
                 embed.add_field(name='Message from:',
-                                value=f'**{author.mention} deleted in {message.channel.mention}**')
+                                value=f'**{message.author.mention} deleted in {message.channel.mention}**')
                 if message.content:
                     embed.description = f'Content:\n>>> {message.content}'
                 if message.attachments:
@@ -232,7 +233,7 @@ class Listeners(commands.Cog):
                             embed.set_image(url=message.attachments[0].proxy_url)
                         else:
                             embed.set_footer(text=f'ID: {message.author.id} • {datetime.now().strftime("%c")}',
-                                             icon_url=author.avatar_url)
+                                             icon_url=message.author.avatar_url)
                             return await message.guild.system_channel.send(
                                 f'Deleted message included a non-image attachment, '
                                 f'that cannot be relocated although its name was '
@@ -240,20 +241,21 @@ class Listeners(commands.Cog):
                                 embed=embed)
                     elif len(message.attachments) > 1:
                         embed.set_footer(text=f'ID: {message.author.id} • {datetime.now().strftime("%c")}',
-                                         icon_url=author.avatar_url)
+                                         icon_url=message.author.avatar_url)
                         names = [f.filename for f in message.attachments]
                         for image in message.attachments:
                             if message.attachments[0].filename.endswith(('.png', '.gif', '.webp,' '.jpg')):
                                 embed.set_image(url=image.proxy_url)
                                 break
                         embed.set_footer(text=f'ID: {message.author.id} • {datetime.now().strftime("%c")}',
-                                         icon_url=author.avatar_url)
+                                         icon_url=message.author.avatar_url)
                         return await message.guild.system_channel.send(
                             f'Deleted message included multiple attachments, '
                             f'that cannot be found :( although there names were:\n'
                             f'`{"`, `".join(names)}`', embed=embed)
 
-                embed.set_footer(text=f'ID: {message.id} • {datetime.now().strftime("%c")}', icon_url=author.avatar_url)
+                embed.set_footer(text=f'ID: {message.id} • {datetime.now().strftime("%c")}',
+                                 icon_url=message.author.avatar_url)
                 await self.bot.config_cache[guild.id]['logging_channel'].send(embed=embed)
 
     # guild creation ---------------------------------------------------------------------------------------------------
@@ -368,8 +370,7 @@ class Listeners(commands.Cog):
         """Command error handler"""
         if hasattr(ctx.command, 'on_error'):
             return
-        print('listeners')
-
+        error = getattr(error, 'original', error)
         ignored = (commands.CommandNotFound, commands.CheckFailure)
         if isinstance(error, ignored):
             return
@@ -397,7 +398,7 @@ class Listeners(commands.Cog):
         elif isinstance(error, commands.CommandInvokeError):
             title = 'This command errored: please hang tight, whilst I try to fix this'
             embed = discord.Embed(title=f'Ignoring exception in command {ctx.command}',
-                                  description=f'```py\n{discord.utils.escape_markdown(format_error(error))}```',
+                                  description=f'```py\n{discord.utils.escape_markdown(format_exec(error))}```',
                                   colour=discord.Colour.red())
             embed.set_author(
                 name=f'Command {ctx.command} {f"{ctx.guild.name} - {ctx.guild.id}," if ctx.guild else ""} used by '
@@ -410,6 +411,17 @@ class Listeners(commands.Cog):
 
         else:
             title = 'Unspecified error: please hang tight, whilst I try take a look at this'
+            embed = discord.Embed(title=f'Ignoring exception in command {ctx.command}',
+                                  description=f'```py\n{discord.utils.escape_markdown(format_exec(error))}```',
+                                  colour=discord.Colour.red())
+            embed.set_author(
+                name=f'Command {ctx.command} {f"{ctx.guild.name} - {ctx.guild.id}," if ctx.guild else ""} used by '
+                     f'{ctx.author.name} - {ctx.author.id}',
+                icon_url=ctx.author.avatar_url)
+            try:
+                await self.bot.get_channel(655093734525894666).send(embed=embed)
+            except discord.HTTPException:
+                raise error
 
         embed = discord.Embed(title=f':warning: **{title}**', color=discord.Colour.red())
         embed.add_field(name='Error message:', value=f'```py\n{type(error).__name__}: {error}\n```')

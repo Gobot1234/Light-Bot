@@ -1,18 +1,22 @@
 import difflib
-from asyncio import TimeoutError
+import asyncio
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from itertools import islice
 from platform import python_version
 from re import split
+from time import perf_counter
 
+import asyncpg
 import discord
 import pygit2
 from discord.ext import commands
 from humanize import naturalsize
 from psutil import virtual_memory, cpu_percent, Process
 
+from Utils.formats import human_join
 from Utils.time import human_timedelta
+from Utils.converters import GuildConverter, get_colour
 
 
 class HelpCommand(commands.HelpCommand):
@@ -61,11 +65,13 @@ class HelpCommand(commands.HelpCommand):
         ctx = self.context
         bot = ctx.bot
         page = 0
-        cogs = [name for name, obj in bot.cogs.items() if await discord.utils.maybe_coroutine(obj.cog_check, ctx)]
+        cogs = [name for name, obj in bot.cogs.items() if await discord.utils.maybe_coroutine(obj.cog_check, ctx)
+                and name != 'owner']
         cogs.sort()
 
         def check(reaction, user):  # check who is reacting to the message
             return user == ctx.author and help_embed.id == reaction.message.id
+
         embed = await self.bot_help_paginator(page, cogs)
 
         help_embed = await ctx.send(embed=embed)  # sends the first help page
@@ -75,7 +81,7 @@ class HelpCommand(commands.HelpCommand):
         while 1:
             try:
                 reaction, user = await bot.wait_for('reaction_add', timeout=90, check=check)  # checks message reactions
-            except TimeoutError:  # session has timed out
+            except asyncio.TimeoutError:  # session has timed out
                 try:
                     await help_embed.clear_reactions()
                 except discord.errors.Forbidden:
@@ -179,8 +185,7 @@ class HelpCommand(commands.HelpCommand):
 
         embed = discord.Embed(title=f'Help with {cog.qualified_name} ({len(cog_commands)} commands)',
                               description=cog.description,
-                              color=ctx.bot.config_cache[ctx.guild.id][
-                                  'colour'] if ctx.guild else discord.Colour.blurple())
+                              color=get_colour(ctx))
         embed.set_author(name=f'We are currently looking at the module {cog.qualified_name} and its commands',
                          icon_url=ctx.author.avatar_url)
         for c in cog_commands:
@@ -199,9 +204,7 @@ class HelpCommand(commands.HelpCommand):
         ctx = self.context
 
         if await command.can_run(ctx):
-            embed = discord.Embed(title=f'Help with `{command.name}`',
-                                  color=ctx.bot.config_cache[ctx.guild.id][
-                                      'colour'] if ctx.guild else discord.Colour.blurple())
+            embed = discord.Embed(title=f'Help with `{command.name}`', color=get_colour(ctx))
             embed.set_author(
                 name=f'We are currently looking at the {command.cog.qualified_name} cog and its command {command.name}',
                 icon_url=ctx.author.avatar_url)
@@ -221,7 +224,7 @@ class HelpCommand(commands.HelpCommand):
         bot = ctx.bot
 
         embed = discord.Embed(title=f'Help with `{group.name}`', description=bot.get_command(group.name).help,
-                              color=bot.config_cache[ctx.guild.id]['colour'] if ctx.guild else discord.Colour.blurple())
+                              color=get_colour(ctx))
         embed.set_author(
             name=f'We are currently looking at the {group.cog.qualified_name} cog and its command {group.name}',
             icon_url=ctx.author.avatar_url)
@@ -292,6 +295,30 @@ class Help(commands.Cog):
         commits = list(islice(repo.walk(repo.head.target, pygit2.GIT_SORT_TOPOLOGICAL), count))
         return '\n'.join(self.format_commit(c) for c in commits)
 
+    @commands.command()
+    async def ping(self, ctx):
+        """Check my ping"""
+        start = perf_counter()
+        await self.bot.session.get('https://discordapp.com')
+        end = perf_counter()
+        discord_duration = (end - start) * 1000
+
+        start = perf_counter()
+        embed = discord.Embed(color=get_colour(ctx)).set_author(name='Pong!')
+        m = await ctx.send(embed=embed)
+        end = perf_counter()
+        message_duration = (end - start) * 1000
+
+        embed.description = f'{self.bot.user.mention} is online.'
+        embed.set_author(name='Pong!', icon_url=self.bot.user.avatar_url)
+        embed.add_field(name=f':heartbeat: Heartbeat latency is:', value=f'`{self.bot.latency * 1000:.2f}` ms.')
+        embed.add_field(name=f'{ctx.emoji.discord} Discord latency is:',
+                        value=f'`{discord_duration:.2f}` ms.')
+        embed.add_field(name=f'{ctx.emoji.text} Message latency is:',
+                        value=f'`{message_duration:.2f}` ms.')
+
+        await m.edit(embed=embed)
+
     @commands.command(aliases=['info'])
     async def stats(self, ctx):
         # memory_usage = self.process.memory_full_info().uss
@@ -301,8 +328,7 @@ class Help(commands.Cog):
                               description=f'**Commands loaded & Cogs loaded:** `{len(self.bot.commands)}` commands loaded, '
                                           f'`{len(self.bot.cogs)}` cogs loaded :gear:\n\n'
                                           f'**Latest Changes:**\n{self.get_last_commits()}\n',
-                              colour=self.bot.config_cache[ctx.guild.id][
-                                  'colour'] if ctx.guild else discord.Colour.blurple(),
+                              colour=get_colour(ctx),
                               timestamp=datetime.now())
         embed.set_author(name=str(self.bot.owner), icon_url=self.bot.owner.avatar_url)
         embed.set_thumbnail(url=self.bot.user.avatar_url)
@@ -320,22 +346,21 @@ class Help(commands.Cog):
         dnd = discord.Status.dnd
         offline = discord.Status.offline
 
-        for member in self.bot.get_all_members():
+        all_members = set(self.bot.get_all_members())
+        for member in all_members:
             if member.bot:
                 total_bots += 1
+                continue
             elif member.status is online:
                 total_online += 1
-                total_members += 1
             elif member.status is idle:
                 total_idle += 1
-                total_members += 1
             elif member.status is dnd:
                 total_dnd += 1
-                total_members += 1
             elif member.status is offline:
                 total_offline += 1
-                total_members += 1
-        total_unique = len(self.bot.users)
+            total_members += 1
+        total_unique = len(all_members)
 
         text = 0
         voice = 0
@@ -347,28 +372,33 @@ class Help(commands.Cog):
                     text += 1
                 elif isinstance(channel, discord.VoiceChannel):
                     voice += 1
-        embed.add_field(name='Members', value=f'`{total_members}` <:discord:626486432793493540> total\n'
-                                              f'`{total_unique}`:star: unique'
+        embed.add_field(name='Members', value=f'`{total_members}` {ctx.emoji.discord} total\n'
+                                              f'`{total_unique}` :star: unique'
                                               f'\n`{total_bots}` :robot: bots')
-        embed.add_field(name='Statuses', value=f'`{total_online}` <:OnlineStatus:659012420735467540> online, '
-                                               f'`{total_idle}` <:IdleStatus:659012420672421888> idle,\n'
-                                               f'`{total_dnd}` <:DNDStatus:659012419296952350> dnd, '
-                                               f'`{total_offline}` <:OfflineStatus:659012420273963008> offline.')
+        embed.add_field(name='Statuses',
+
+                        value=f'`{total_online}` {ctx.emoji.discord} online,\n'
+                              f'`{total_idle}` {ctx.emoji.idle} idle,\n'
+                              f'`{total_dnd}` {ctx.emoji.dnd} dnd,\n'
+                              f'`{total_offline}` {ctx.emoji.offline} offline.')
         embed.add_field(name='Servers & Channels',
-                        value=f'{guilds} total servers\n{text + voice} total channels\n{text} text chanels\n{voice} voice channels')
+                        value=f'{guilds} total servers\n{text + voice} total channels\n'
+                              f'{text} text channels\n{voice} voice channels')
         # pc info
-        embed.add_field(name="<:compram:622622385182474254> RAM Usage",
+        embed.add_field(name=f'{ctx.emoji.ram} RAM Usage',
                         value=f'Using `{naturalsize(rawram[3])}` / `{naturalsize(rawram[0])}` `{round(rawram[3] / rawram[0] * 100, 2)}`% ')
         # f'of your physical memory and `{naturalsize(memory_usage)}` of which unique to this process.')
-        embed.add_field(name='<:cpu:622621524418887680> CPU Usage',
-                        value=f'`{cpu_percent()}`% used'
-                              f'\n\n:arrow_up: Uptime\n {self.bot.user.mention} has been online for: {self.get_uptime()}')
+        embed.add_field(name=f'{ctx.emoji.cpu} CPU Usage',
+                        value=f'`{cpu_percent()}`% used\n\n'
+                              f':arrow_up: Uptime\n {self.bot.user.mention} has been online for: {self.get_uptime()}')
         embed.add_field(name=':exclamation:Command prefix',
                         value=f'Your command prefix is `{ctx.prefix}`. Type {ctx.prefix}help to list the '
                               f'commands you can use')
         embed.add_field(name='Version info:',
-                        value=f'<:dpy:622794044547792926>: `{discord.__version__}`, '
-                              f'<:python:622621989474926622>: `{python_version()}`', inline=False)
+                        value=f'{ctx.emoji.dpy}: `{discord.__version__}`, '
+                              f'{ctx.emoji.python} `{asyncpg.__version__}`'
+                              f'{ctx.emoji.python}: `{python_version()}`',  # TODO add more version info
+                        inline=False)
         embed.set_footer(text="If you need any help join the help server of this code discord.gg",
                          icon_url=ctx.author.avatar_url)
         await ctx.send(embed=embed)
@@ -382,30 +412,79 @@ class Help(commands.Cog):
             description=f'[PNG]({member.avatar_url_as(format="png")}) | '
                         f'[JPEG]({member.avatar_url_as(format="jpg")}) | '
                         f'[WEBP]({member.avatar_url_as(format="webp")})',
-            colour=discord.Colour.blurple()
+            colour=get_colour(ctx)
         )
         if member.is_avatar_animated():
             embed.description += f' | [GIF]({member.avatar_url_as(format="gif")})'
         embed.set_author(name=member.display_name, icon_url=member.avatar_url)
-        embed.set_image(url=member.avatar_url_as(format='gif' if member.is_avatar_animated() else 'webp'))
+        embed.set_image(url=member.avatar_url_as(format='gif' if member.is_avatar_animated() else 'png'))
         await ctx.send(embed=embed)
 
-    @commands.command()
-    async def user(self, ctx, user: discord.Member):
-        shared_guilds = [g for g in self.bot.guilds if g.get_member(ctx.author.id)]
-        perms = ' | '.join([perm for perm, val in dict(ctx.author.permissions_in(ctx.channel)).items() if val]).replace("_", " ")
+    @commands.command(aliases=['member'])
+    async def user(self, ctx, user: discord.Member = None):
+        user = user or ctx.author
 
-    @commands.command(name='server-info', aliases=['serverinfo'])
-    async def server(self, ctx, *, guild_id: int = None):
+        voice_perms = [
+            'deafen_members',
+            'move_members',
+            'mute_members',
+            'priority_speaker',
+            'speak',
+            'stream',
+            'use_voice_activation',
+            'connect'
+        ]
+        key_to_emoji = {
+            "online": '<:online:659012420735467540>',
+            "idle": '<:idle:659012420672421888>',
+            "dnd": '<:dnd:659012419296952350>',
+            "offline": '<:offline:659012420273963008>',
+        }
+
+        shared_guilds = [g.name for g in self.bot.guilds if user in g.members]
+        perms = [
+            f'{ctx.emoji.tick} {perm.title()}' for perm, val in
+            sorted(dict(user.permissions_in(ctx.channel)).items()) if val and perm not in voice_perms
+        ]
+        perms_denied = [
+            f'{ctx.emoji.offline} {perm.title()}' for perm, val in
+            sorted(dict(user.permissions_in(ctx.channel)).items()) if not val and perm not in voice_perms
+        ]
+        perms = '\n'.join(perms).replace("_", " ").replace('Tts', 'TTS') if perms else 'None'
+        perms_denied = '\n'.join(perms_denied).replace("_", " ").replace('Tts', 'TTS') if perms_denied else 'None'
+
+        embed = discord.Embed(title=f'Info on {user}', colour=get_colour(ctx))
+        embed.set_author(name=user.display_name, icon_url=user.avatar_url)
+        embed.set_thumbnail(url=user.avatar_url)
+        embed.add_field(name='ID', value=user.id)
+        embed.add_field(name=f'{user.display_name} created their account', value=human_timedelta(user.created_at))
+        embed.add_field(name=f'{user.display_name} joined this guild', value=human_timedelta(user.joined_at))
+        embed.add_field(name='Shared guilds', value=human_join(shared_guilds, final='and')) \
+            if user != self.bot.user else embed.add_field(name=f'I am in:', value=f'{len(self.bot.guilds)} servers')
+
+        embed.add_field(
+            name=f'{user.display_name} has these permission{"s" if len(perms) != 1 else ""} in this channel:',
+            value=perms if 'Administrator' not in perms else 'All as they are Admin')
+        embed.add_field(
+            name=f'{user.display_name} has these permission{"s" if len(perms) != 1 else ""} denied in this channel:',
+            value=perms_denied)
+
+        embed.add_field(
+            name=f'Roles ({len(user.roles) - 1})',
+            value=human_join(
+                [role.mention for role in sorted([role for role in user.roles if role != ctx.guild.default_role],
+                                                 reverse=True, key=lambda r: r.position)],
+                final='and') if len(user.roles) != 0 else 'None',
+            inline=False)
+        embed.add_field(name='Status',
+                        value=f'{key_to_emoji[str(user.status)]} '
+                              f'{str(user.status).title().replace("Dnd", "Do Not Disturb")}')
+        await ctx.send(embed=embed)
+
+    @commands.command(aliases=['guild'])
+    async def server(self, ctx, *, guild: GuildConverter = None):
         """Get info in the current server"""
-        if guild_id is not None and await self.bot.is_owner(ctx.author):
-            guild = self.bot.get_guild(guild_id)
-            if guild is None:
-                return await ctx.send(f'Invalid Guild ID given.')
-        else:
-            guild = ctx.guild
-
-        roles = [role.mention for role in guild.roles if role is not guild.default_role]
+        guild = guild or ctx.guild
 
         class Secret:
             pass
@@ -428,17 +507,17 @@ class Help(commands.Cog):
 
         member_by_status = Counter(str(m.status) for m in guild.members)
 
-        e = discord.Embed()
-        e.title = guild.name
-        e.add_field(name='ID', value=guild.id)
-        e.add_field(name='Owner', value=guild.owner)
+        embed = discord.Embed(title=guild.name, colour=get_colour(ctx))
+        embed.add_field(name='ID', value=guild.id)
+        embed.add_field(name='Owner', value=guild.owner)
+
         if guild.icon:
-            e.set_thumbnail(url=guild.icon_url)
+            embed.set_thumbnail(url=guild.icon_url)
 
         channel_info = []
         key_to_emoji = {
-            discord.TextChannel: '<:text_channel:586339098172850187>',
-            discord.VoiceChannel: '<:voice_channel:586339098524909604>',
+            discord.TextChannel: ctx.emoji.text,
+            discord.VoiceChannel: ctx.emoji.voice
         }
         for key, total in totals.items():
             secrets = secret[key]
@@ -472,30 +551,35 @@ class Help(commands.Cog):
 
         for feature, label in all_features.items():
             if feature in features:
-                info.append(f'{ctx.tick(True)}: {label}')
+                info.append(f'{label}')
 
         if info:
-            e.add_field(name='Features', value='\n'.join(info))
+            embed.add_field(name='Features:', value='\n'.join(info))
 
-        e.add_field(name='Channels', value='\n'.join(channel_info))
+        embed.add_field(name='Channels:', value='\n'.join(channel_info))
+        embed.add_field(name='Verification level:', value=str(ctx.guild.verification_level).replace('_', ' ').title())
+        embed.add_field(name='Region:', value=str(ctx.guild.region).replace('_', ' ').title())
 
         if guild.premium_tier != 0:
             boosts = f'Level {guild.premium_tier}\n{guild.premium_subscription_count} boosts'
             last_boost = max(guild.members, key=lambda m: m.premium_since or guild.created_at)
             if last_boost.premium_since is not None:
                 boosts = f'{boosts}\nLast Boost: {last_boost} ({human_timedelta(last_boost.premium_since, accuracy=2)})'
-            e.add_field(name='Boosts', value=boosts, inline=False)
+            embed.add_field(name='Boosts', value=boosts, inline=False)
 
-        fmt = f'<:OnlineStatus:659012420735467540> {member_by_status["online"]} ' \
-              f'<:IdleStatus:659012420672421888> {member_by_status["idle"]} ' \
-              f'<:DNDStatus:659012419296952350> {member_by_status["dnd"]} ' \
-              f'<:OfflineStatus:659012420273963008> {member_by_status["offline"]}\n' \
+        fmt = f'{ctx.emoji.online} {member_by_status["online"]}\n' \
+              f'{ctx.emoji.idle} {member_by_status["idle"]}\n' \
+              f'{ctx.emoji.dnd} {member_by_status["dnd"]}\n' \
+              f'{ctx.emoji.offline} {member_by_status["offline"]}\n' \
               f'Total: {guild.member_count}'
 
-        e.add_field(name='Members', value=fmt, inline=False)
-        e.add_field(name='Roles', value=', '.join(roles) if len(roles) < 10 else f'{len(roles)} roles')
-        e.set_footer(text='Created').timestamp = guild.created_at
-        await ctx.send(embed=e)
+        embed.add_field(name='Members', value=fmt, inline=False)
+        embed.add_field(name=f'Roles ({len(guild.roles) - 1})',
+                        value=human_join([role.mention for role in sorted(
+                            [role for role in guild.roles if role != guild.default_role],
+                            reverse=True, key=lambda r: r.position)], final='and')
+                        if len(guild.roles) < 10 and guild == ctx.guild else f'{len(guild.roles) - 1} roles')
+        await ctx.send(embed=embed)
 
 
 def setup(bot):

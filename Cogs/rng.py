@@ -70,9 +70,6 @@ class RNG(commands.Cog):
                             'I have a bad feeling about this.', 'In my experience, there\'s no such thing as luck.',
                             'Why hello there']
 
-    async def cog_check(self, ctx):
-        return True
-
     @commands.command(aliases=['kitty', 'pussy'])
     async def cat(self, ctx, fact=None):
         """Get an image and optionally a fact about a cat"""
@@ -130,27 +127,29 @@ class RNG(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command()
-    async def hug(self, ctx, huggie: discord.Member, *, note=None):
+    async def hug(self, ctx, huggie: discord.Member, *, message=None):
         """Someone need some love?
         eg. {prefix}hug @Gobot1234#2435 mmmmmh notes"""
         hugger = ctx.author
 
         if huggie.bot:
-            response = random.choice(['You can\'t hug a bot :(', 'Imagine how cold they are'])
+            response = random.choice(['You can\'t hug a bot :(',
+                                      'Imagine how cold they are',
+                                      'I appreciate your existance'])
             await ctx.send(response)
         elif huggie == hugger:
             response = random.choice(['That\'s kind of sad ngl :(', 'Come on that\'s gotta feel weird', 'Get a room'])
             await ctx.send(response)
         else:
             gif = random.choice(self.hug_images)
-            embed = discord.Embed(title=f"You have received a hug from {hugger.display_name} (っ´▽｀)っ", color=0xffd1dc)
+            hug = {random.choice(self.hug_hugs)}
+            embed = discord.Embed(title=f"You have received a hug from {hugger.display_name} {hug}", color=0xffd1dc)
             embed.set_image(url=gif)
-            if note:
-                embed.add_field(name='A note was enclosed', value=note, inline=False)
+            if message:
+                embed.add_field(name='A messgage was enclosed', value=message, inline=False)
             await huggie.send(embed=embed)
-            await ctx.send(f'> Hugged {huggie.display_name} {random.choice(self.hug_hugs)}')
+            await ctx.send(f'> Hugged {huggie.display_name} {hug}')
 
 
 def setup(bot):
     bot.add_cog(RNG(bot))
-    bot.log.info('Loaded RNG cog')

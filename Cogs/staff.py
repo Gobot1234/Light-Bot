@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Optional, Union
 
 import discord
+import typing
 from discord.ext import commands, buttons
 from psutil import Process
 
@@ -24,7 +25,7 @@ class Staff(commands.Cog):
     async def cog_check(self, ctx):
         if ctx.guild is None:
             return False
-        return ctx.author.guild_permissions.ban_members or ctx.author.guild_permissions.kick_members or \
+        return ctx.author == ctx.bot.owner or ctx.author.guild_permissions.ban_members or ctx.author.guild_permissions.kick_members or \
                ctx.author.guild_permissions.manage_roles or ctx.author.permissions_in(ctx.channel).manage_messages or \
                ctx.author.guild_permissions.manage_guild
 
@@ -188,7 +189,20 @@ class Staff(commands.Cog):
                 await ctx.send('They weren\'t muted in the first place')
             else:
                 await member.remove_roles(discord.utils.get(member.guild.roles, name='Muted'), reason=reason)
-                await ctx.send(f'Un-muted {member.display_name}, for reason \"{reason}\"')
+                await ctx.send(f'Un-muted {member.display_name}, for reason "{reason}"')
+
+    @commands.command()
+    @commands.has_permissions(manage_roles=True)
+    async def announce(self, ctx, channel: discord.TextChannel, mention_everyone: typing.Optional[bool] = False,
+                       *, when: UserFriendlyTime(commands.clean_content)):
+        await ctx.send(f'I will send "{when.arg}", to {channel} in {human_timedelta(when.dt)}')
+        await discord.utils.sleep_until(when.dt)
+        embed = discord.Embed(title=f'Announcement from {ctx.author}', description=when.arg,
+                              colour=self.bot.config_cache[ctx.guild.id]['colour'])
+        if not mention_everyone:
+            await channel.send(embed=embed)
+        else:
+            await channel.send('@everyone', embed=embed)
 
     #  ban -------------------------------------------------------------------------------------------------------------
 
@@ -327,29 +341,35 @@ class Staff(commands.Cog):
     async def prefix(self, ctx):
         """View your current prefixes by just typing {prefix}prefix"""
         if ctx.invoked_subcommand is None:
-            await ctx.send(
-                f'Your current prefixes are `{"`, `".join(self.bot.config_cache[ctx.guild.id]["prefixes"])}` '
-                f'& {self.bot.user.mention}')
+            prefixes = await commands.clean_content().convert(ctx, argument='\n'.join(self.bot.config_cache[ctx.guild.id]['prefixes']))
+            embed = discord.Embed(title=f'Your current prefixes for {ctx.guild} are',
+                                  description=f'{prefixes}\n& @{self.bot.user.name}',
+                                  colour=self.bot.config_cache[ctx.guild.id]['colour'])
+            embed.set_thumbnail(url=ctx.guild.icon_url)
 
-    @prefix.command()
-    async def add(self, ctx, prefix: str):
+            await ctx.send(embed=embed)
+
+    @prefix.command(name='add')
+    async def p_add(self, ctx, prefix: str):
         """Add a prefix to your server's prefixes"""
         if prefix.startswith(f'<@{ctx.me.id}>') or prefix.startswith(f'<@!{ctx.me.id}>'):
             await ctx.send('I\'m sorry but you can\'t use that prefix')
         else:
             if len(self.bot.config_cache[ctx.guild.id]["prefixes"]) >= 10:
                 return await ctx.send('You can\'t add anymore prefixes')
-            prefix = self.bot.config_cache[ctx.guild.id]["prefixes"].append(prefix)
+            if prefix in self.bot.config_cache[ctx.guild.id]["prefixes"]:
+                return await ctx.send('That prefix is already in use')
+            self.bot.config_cache[ctx.guild.id]["prefixes"].append(prefix)
             await self.bot.db.execute(
                 """
-                UPDATE config
-                    prefixes = $1
-                WHERE guild_id = $2;
-                """, prefix, ctx.guild.id)
+                UPDATE config 
+                    SET prefixes = prefixes || $1::text WHERE guild_id IN ($2)
+                """, prefix, ctx.guild.id
+            )
             await ctx.send(f'Successfully added `{prefix}` to your prefixes')
 
-    @prefix.command()
-    async def remove(self, ctx, prefix: str):
+    @prefix.command(name='remove')
+    async def p_remove(self, ctx, prefix: str):
         """Remove a prefix from your server's prefixes"""
         if prefix.startswith(f'<@{self.bot.user.id}>') or prefix.startswith(f'<@!{self.bot.user.id}>'):
             await ctx.send('I\'m sorry but you can\'t use that prefix')
@@ -357,17 +377,39 @@ class Staff(commands.Cog):
             try:
                 prefix = self.bot.config_cache[ctx.guild.id]["prefixes"].remove(prefix)
             except ValueError:
-                await ctx.send(f'{commands.clean_content.convert(ctx, prefix)} isn\'t in your list of prefixes')
+                await ctx.send(f'{prefix} isn\'t in your list of prefixes')
             else:
                 await self.bot.db.execute(
                     """
                     UPDATE config
                         prefixes = $1
                     WHERE guild_id = $2;
-                    """, prefix, ctx.guild.id)
+                    """, prefix, ctx.guild.id
+                )
                 await ctx.send(f'Successfully removed `{prefix}` from prefixes')
+
+    @commands.group(invoke_without_subcommand=True, aliases=['log'])
+    @commands.has_permissions(manage_guild=True)
+    async def logged_events(self, ctx):
+        if ctx.invoked_subcommand is None:
+            events = '\n'.join(self.bot.config_cache[ctx.guild.id]['logged_events'])
+            embed = discord.Embed(title=f'Logged Events for {ctx.guild} are',
+                                  description=events if events else 'No events are currently logged',
+                                  colour=self.bot.config_cache[ctx.guild.id]['colour'])
+            embed.set_thumbnail(url=ctx.guild.icon_url)
+            await ctx.send(embed=embed)
+
+    @logged_events.command(name='add')
+    async def e_add(self, ctx, event):
+        self.bot.config_cache[ctx.guild.id]['logged_events'].append(event)
+        await self.bot.db.execute(
+            """
+            UPDATE config 
+                SET logged_events = logged_events || $1::text WHERE guild_id IN ($2)
+            """, event, ctx.guild.id
+        )
+        await ctx.send(f'Added `{event}` to your logged events')
 
 
 def setup(bot):
     bot.add_cog(Staff(bot))
-    bot.log.info('Loaded Staff cog')
