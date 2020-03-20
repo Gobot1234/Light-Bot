@@ -3,7 +3,7 @@ import importlib
 from contextlib import redirect_stdout
 from io import StringIO
 from platform import python_version
-from subprocess import getoutput, PIPE
+from subprocess import getoutput
 from textwrap import indent
 from time import perf_counter
 
@@ -282,8 +282,7 @@ class Owner(commands.Cog):
         await message.remove_reaction(ctx.emoji.loading, ctx.guild.me)
         await message.edit(embed=embed)
 
-
-    @commands.command()
+    @commands.command(aliases=['ru'])
     @commands.is_owner()
     async def reloadutil(self, ctx, name: str):
         """Reload a Utils module"""
@@ -291,9 +290,10 @@ class Owner(commands.Cog):
             module_name = importlib.import_module(f"Utils.{name}")
             importlib.reload(module_name)
         except ModuleNotFoundError:
-            return await ctx.send(f'Couldn\'t find module named **{name}** in Utils.')
+            return await ctx.send(f'I couldn\'t find module named **{name}** in Utils.')
         except Exception as e:
-            await ctx.send(f'Module **{name}** returned error and was not reloaded...\n```py\n{format_error(e)}```')
+            await ctx.send(f'Module **{name}** raised an error and was not reloaded...\n'
+                           f'```py\n{format_error(e)}```')
         else:
             await ctx.send(f"Reloaded module **{name}**")
 
