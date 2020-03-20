@@ -224,7 +224,8 @@ class Owner(commands.Cog):
             embed.description = f'**Add result:**\n{ctx.emoji.cross} ```js\n{add}```'
             return await message.edit(embed=embed)
         else:
-            embed.description = f'**Add result:**\n{ctx.emoji.tick} ```js\n{add}```'
+            add = f'```js\n{add}```' if add else ''
+            embed.description = f'**Add result:**\n{ctx.emoji.tick} '
 
         commit = await self.bot.loop.run_in_executor(None, getoutput, f'git commit -m "{commit_msg}"')
         if any([word in commit.split() for word in errored]):
