@@ -235,10 +235,10 @@ class Owner(commands.Cog):
         if any([word in commit.split() for word in errored]):
             await message.add_reaction(ctx.emoji.cross)
             await message.remove_reaction(ctx.emoji.loading, ctx.guild.me)
-            embed.description = f'{ctx.emoji.cross} **Commit result:**```js\n{commit}```'
+            embed.description += f'{ctx.emoji.cross} **Commit result:**```js\n{commit}```'
             return await message.edit(embed=embed)
         else:
-            embed.description = f'{ctx.emoji.tick} **Commit result:**```js\n{commit}```'
+            embed.description += f'{ctx.emoji.tick} **Commit result:**```js\n{commit}```'
         await message.edit(embed=embed)
 
         push = await self.bot.loop.run_in_executor(None, getoutput, 'git push')
@@ -258,7 +258,7 @@ class Owner(commands.Cog):
     async def pull(self, ctx, hard: bool = False):
         """Pull any changes from the GitHub repo"""
         errored = ('fatal', 'error')
-        embed = discord.Embed(title=f'GitHub {"Hard" if hard else ""} Pull', description='', colour=get_colour(ctx))
+        embed = discord.Embed(title=f'GitHub{" Hard" if hard else ""} Pull', description='', colour=get_colour(ctx))
         message = await ctx.send(embed=embed)
         await message.add_reaction(ctx.emoji.loading)
         if hard:
