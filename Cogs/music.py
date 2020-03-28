@@ -134,14 +134,14 @@ class Player(wavelink.Player):
         channel = self.bot.get_channel(int(self.channel_id))
         qsize = self.queue.qsize()
 
-        embed = discord.Embed(title=f'<a:eq:688741356524404914> Music Controller | {channel.name}',
+        embed = discord.Embed(title=f'{self.context.emoji.eq} Music Controller | {channel.name}',
                               colour=get_colour(self.context))
         embed.description = f'Now Playing:\n**`{track.title}`**\n\n'
         embed.set_thumbnail(url=track.thumb)
 
         embed.add_field(name='⏱ Duration', value=str(datetime.timedelta(milliseconds=int(track.length))))
         embed.add_field(name='🎼 Queue Length', value=str(qsize))
-        embed.add_field(name='<:voicechannel:661376810650435624> Volume', value=f'**`{self.volume}%`**')
+        embed.add_field(name=f'{self.context.emoji.voice} Volume', value=f'**`{self.volume}%`**')
         embed.add_field(name='👥 Requested By', value=track.requester.mention)
         embed.add_field(name='🎧 DJ', value=self.dj.mention)
         embed.add_field(name='💿 Video URL', value=f'[Click Here!]({track.uri})')
@@ -325,8 +325,8 @@ class Music(commands.Cog):
         """Connect and initiate nodes."""
         await self.bot.wait_until_ready()
 
-        nodes = {
-            "MAIN": dict(
+        nodes = dict(
+            MAIN=dict(
                 host='127.0.0.1',
                 port=2333,
                 rest_uri='http://127.0.0.1:2333',
@@ -334,7 +334,7 @@ class Music(commands.Cog):
                 identifier='Main',
                 region='europe'
             )
-        }
+        )
 
         for n in nodes.values():
             node = await self.wavelink.initiate_node(**n)
@@ -658,14 +658,16 @@ class Music(commands.Cog):
         if not self.is_privileged(ctx):
             return await ctx.send('Only the DJ or admins may change the equalizer.')
 
-        eqs = {'flat': wavelink.Equalizer.flat(),
-               'boost': wavelink.Equalizer.boost(),
-               'metal': wavelink.Equalizer.metal(),
-               'piano': wavelink.Equalizer.piano()}
+        eqs = {
+            'flat': wavelink.Equalizer.flat(),
+            'boost': wavelink.Equalizer.boost(),
+            'metal': wavelink.Equalizer.metal(),
+            'piano': wavelink.Equalizer.piano()
+        }
 
         eq = eqs.get(equalizer.lower(), None)
 
-        if not eq:
+        if eq is None:
             joined = "\n".join(eqs.keys())
             return await ctx.send(f'Invalid EQ provided. Valid EQs:\n\n{joined}')
 
@@ -689,8 +691,8 @@ class Music(commands.Cog):
 
         await paginator.start(ctx)
 
-    @commands.command(aliases=['np', 'now_playing', 'current'])
-    async def nowplaying(self, ctx: commands.Context):
+    @commands.command(aliases=['np', 'now-playing', 'current'])
+    async def now_playing(self, ctx: commands.Context):
         """Update the player controller."""
         player: Player = self.wavelink.get_player(guild_id=ctx.guild.id, cls=Player, context=ctx)
 
@@ -734,5 +736,4 @@ class Music(commands.Cog):
 
 
 def setup(bot: commands.Bot):
-    pass
-    #bot.add_cog(Music(bot))
+    bot.add_cog(Music(bot))

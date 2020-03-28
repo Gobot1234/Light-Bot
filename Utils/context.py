@@ -1,3 +1,6 @@
+import asyncio
+
+import discord
 from discord import HTTPException, PartialEmoji
 from discord.ext import commands
 
@@ -43,4 +46,18 @@ class Contexter(commands.Context):
             await self.message.add_reaction(self.emoji.tick if value else self.emoji.cross)
         except HTTPException:
             pass
+
+    async def bin(self, message: discord.Message, *, timeout=90):
+        def check(reaction, user):
+            return user == self.author and str(reaction.emoji) == '🗑️'
+
+        try:
+            reaction, user = await self.bot.wait_for('reaction_add', timeout=timeout, check=check)
+        except asyncio.TimeoutError:
+            try:
+                await message.clear_reactions()
+            except discord.HTTPException:
+                pass
+        else:
+            await message.delete()
 

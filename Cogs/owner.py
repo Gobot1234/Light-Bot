@@ -121,10 +121,10 @@ class Owner(commands.Cog):
             body = strip_code_block(body)
             stdout = StringIO()
             split = body.splitlines()
-            previous_lines = ''.join(split[:-1]) if split[:-1] else ''
+            previous_lines = '\n'.join(split[:-1]) if split[:-1] else ''
             last_line = ''.join(split[-1:])
             if not last_line.strip().startswith('return'):
-                if not last_line.strip().startswith(('import', 'print')):
+                if not last_line.strip().startswith(('import', 'print', 'raise')):
                     body = f'{previous_lines}\n{" " * (len(last_line) - len(last_line.lstrip()))}return {last_line}'
             to_compile = f'async def func():\n{indent(body, "  ")}'
 
@@ -137,8 +137,7 @@ class Owner(commands.Cog):
                 await ctx.bool(False)
                 embed = discord.Embed(
                     title=f'{ctx.emoji.cross} {e.__class__.__name__}',
-                    description=f'```py\nTraceback (most recent call last):'
-                                f'{"".join(format_error(e).split("exec(to_compile, env)", 1)[0])}```',
+                    description=f'```py\n{format_error(e, strip=True)}```',
                     color=get_colour(ctx, 'colour_bad'))
                 embed.set_footer(
                     text=f'Python: {python_version()} • Process took {timer:.2f} ms to run',
@@ -152,12 +151,11 @@ class Owner(commands.Cog):
                 value = stdout.getvalue()
                 end = perf_counter()
                 timer = (end - start) * 1000
-                error = format_error(e).split('ret = await self.bot.loop.create_task'
-                                              '(asyncio.wait_for(func(), 60))', 1)[1]
+
                 await ctx.bool(False)
                 embed = discord.Embed(
                     title=f'{ctx.emoji.cross} {e.__class__.__name__}',
-                    description=f'```py\nTraceback (most recent call last):{value}{error}```',
+                    description=f'```py\n{value}\n{format_error(e, strip=True)}```',
                     color=get_colour(ctx, 'colour_bad'))
                 embed.set_footer(
                     text=f'Python: {python_version()} • Process took {timer:.2f} ms to run',
@@ -185,12 +183,12 @@ class Owner(commands.Cog):
                         if value:
                             embed.add_field(
                                 name='Eval complete',
-                                value=f'```py\n{value.replace(self.bot.http.token, "[token omitted]")}```')
+                                value=f'```py\n{str(value).replace(self.bot.http.token, "[token omitted]")}```')
                     else:
                         self._last_result = ret
                         embed.add_field(
                             name='Eval returned',
-                            value=f'```py\n{ret.replace(self.bot.http.token, "[token omitted]")}```')
+                            value=f'```py\n{str(ret).replace(self.bot.http.token, "[token omitted]")}```')
                     embed.set_footer(
                         text=f'Python: {python_version()} • Process took {timer:.2f} ms to run',
                         icon_url='https://www.python.org/static/apple-touch-icon-144x144-precomposed.png')

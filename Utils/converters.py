@@ -1,6 +1,6 @@
 import re
 from io import BytesIO
-from typing import Optional, Union
+from typing import Optional, Union, List
 
 import aiohttp
 import discord
@@ -40,7 +40,12 @@ class GuildConverter(commands.Converter):
         if str(argument).isdigit():
             guild: discord.Guild = ctx.bot.get_guild(argument)
         else:
-            guild: discord.Guild = discord.utils.get(ctx.bot.guilds, name=argument)
+            guilds: List[discord.Guild] = [guild for guild in ctx.bot.guilds if guild.name == argument]
+            if len(guilds) > 1:
+                raise commands.BadArgument(f'Multiple guilds with that name found use its id instead')
+            if guilds:
+                return guilds[0]
+            raise commands.BadArgument(f'Guild "{argument}" not found')
 
         if guild is None:
             raise commands.BadArgument(f'Guild "{argument}" not found')

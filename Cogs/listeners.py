@@ -66,7 +66,7 @@ class Listeners(commands.Cog):
                     colour_bad, colour_good,
                     join_message, logging_channel,
                     logged_events
-                    )
+                )
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
                 """, guild.id, False, ['='], discord.Colour.blurple().value,
                 discord.Colour.red().value, discord.Colour.green().value, None, None, []
@@ -86,7 +86,7 @@ class Listeners(commands.Cog):
             if blacklisted is True:
                 self.bot.log.info(f'Leaving "{guild.name}" - "{guild.id}" as it is a blacklisted guild')
                 return await guild.leave()
-        embed = discord.Embed(title=':tick:688829439659737095 Server added!',
+        embed = discord.Embed(title='<:tick:688829439659737095> Server added!',
                               description='Thank you for adding me to your server!\n'
                                           'Type `=help` to view my commands', color=discord.Colour.green())
         embed.set_footer(text='Joined').timestamp = datetime.now()

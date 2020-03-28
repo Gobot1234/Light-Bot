@@ -2,6 +2,7 @@ import difflib
 import asyncio
 from collections import Counter
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
 from itertools import islice
 from platform import python_version
 from re import split
@@ -9,9 +10,11 @@ from time import perf_counter
 
 import asyncpg
 import discord
+import matplotlib.pyplot as plt
 import pygit2
 from discord.ext import commands
 from humanize import naturalsize
+from matplotlib.figure import figaspect
 from psutil import virtual_memory, cpu_percent, Process
 
 from Utils.formats import human_join
@@ -324,15 +327,14 @@ class Help(commands.Cog):
         # memory_usage = self.process.memory_full_info().uss
         rawram = virtual_memory()
         embed = discord.Embed(title=f'**{self.bot.user.name}** - Official Bot Server Invite & Bot information',
-                              url='https://discord.gg/h8chCgW',
-                              description=f'**Commands loaded & Cogs loaded:** `{len(self.bot.commands)}` commands loaded, '
-                                          f'`{len(self.bot.cogs)}` cogs loaded :gear:\n\n'
+                              description=f'**Commands loaded & Cogs loaded:** '
+                                          f'`{len(self.bot.commands)}` commands loaded, '
+                                          f'`{len(self.bot.cogs)}` extensions loaded\n\n'
                                           f'**Latest Changes:**\n{self.get_last_commits()}\n',
                               colour=get_colour(ctx),
                               timestamp=datetime.now())
         embed.set_author(name=str(self.bot.owner), icon_url=self.bot.owner.avatar_url)
         embed.set_thumbnail(url=self.bot.user.avatar_url)
-
         # statistics
         total_bots = 0
         total_members = 0
@@ -373,10 +375,9 @@ class Help(commands.Cog):
                 elif isinstance(channel, discord.VoiceChannel):
                     voice += 1
         embed.add_field(name='Members', value=f'`{total_members}` {ctx.emoji.discord} total\n'
-                                              f'`{total_unique}` :star: unique'
-                                              f'\n`{total_bots}` :robot: bots')
+                                              f'`{total_bots}` :robot: bots\n'
+                                              f'`{total_unique}` :star: unique.')
         embed.add_field(name='Statuses',
-
                         value=f'`{total_online}` {ctx.emoji.discord} online,\n'
                               f'`{total_idle}` {ctx.emoji.idle} idle,\n'
                               f'`{total_dnd}` {ctx.emoji.dnd} dnd,\n'
@@ -396,10 +397,10 @@ class Help(commands.Cog):
                               f'commands you can use')
         embed.add_field(name='Version info:',
                         value=f'{ctx.emoji.dpy}: `{discord.__version__}`, '
-                              f'{ctx.emoji.python} `{asyncpg.__version__}`'
+                              f'{ctx.emoji.postgres}: `{asyncpg.__version__}`'
                               f'{ctx.emoji.python}: `{python_version()}`',  # TODO add more version info
                         inline=False)
-        embed.set_footer(text="If you need any help join the help server of this code discord.gg",
+        embed.set_footer(text="If you need any help join the help server discord.gg",
                          icon_url=ctx.author.avatar_url)
         await ctx.send(embed=embed)
 
@@ -447,18 +448,20 @@ class Help(commands.Cog):
             sorted(dict(user.permissions_in(ctx.channel)).items()) if val and perm not in voice_perms
         ]
         perms_denied = [
-            f'{ctx.emoji.offline} {perm.title()}' for perm, val in
+            f'{ctx.emoji.cross} {perm.title()}' for perm, val in
             sorted(dict(user.permissions_in(ctx.channel)).items()) if not val and perm not in voice_perms
         ]
         perms = '\n'.join(perms).replace("_", " ").replace('Tts', 'TTS') if perms else 'None'
         perms_denied = '\n'.join(perms_denied).replace("_", " ").replace('Tts', 'TTS') if perms_denied else 'None'
 
-        embed = discord.Embed(title=f'Info on {user}', colour=get_colour(ctx))
+        embed = discord.Embed(title=f'Info on {user}', colour=user.colour)
         embed.set_author(name=user.display_name, icon_url=user.avatar_url)
         embed.set_thumbnail(url=user.avatar_url)
-        embed.add_field(name='ID', value=user.id)
-        embed.add_field(name=f'{user.display_name} created their account', value=human_timedelta(user.created_at))
-        embed.add_field(name=f'{user.display_name} joined this guild', value=human_timedelta(user.joined_at))
+        embed.add_field(name='ID:', value=user.id)
+        embed.add_field(name=f'{user.display_name} created their account:',
+                        value=human_timedelta(user.created_at, accuracy=2))
+        embed.add_field(name=f'{user.display_name} joined this guild:',
+                        value=human_timedelta(user.joined_at, accuracy=2))
         embed.add_field(name='Shared guilds', value=human_join(shared_guilds, final='and')) \
             if user != self.bot.user else embed.add_field(name=f'I am in:', value=f'{len(self.bot.guilds)} servers')
 
@@ -468,6 +471,9 @@ class Help(commands.Cog):
         embed.add_field(
             name=f'{user.display_name} has these permission{"s" if len(perms) != 1 else ""} denied in this channel:',
             value=perms_denied)
+        if user.premium_since:
+            embed.add_field(name=f'{user.display_name} has been boosting since:',
+                            value=human_timedelta(user.premium_since))
 
         embed.add_field(
             name=f'Roles ({len(user.roles) - 1})',
@@ -476,15 +482,16 @@ class Help(commands.Cog):
                                                  reverse=True, key=lambda r: r.position)],
                 final='and') if len(user.roles) != 0 else 'None',
             inline=False)
-        embed.add_field(name='Status',
+        embed.add_field(name='Status:',
                         value=f'{key_to_emoji[str(user.status)]} '
-                              f'{str(user.status).title().replace("Dnd", "Do Not Disturb")}')
+                              f'{str(user.status).title().replace("Dnd", "Do Not Disturb")}\n'
+                              f'Is on mobile: {user.is_on_mobile()}')
         await ctx.send(embed=embed)
 
     @commands.command(aliases=['guild'])
-    async def server(self, ctx, *, guild: GuildConverter = None):
+    async def server(self, ctx, *, server: GuildConverter = None):
         """Get info in the current server"""
-        guild = guild or ctx.guild
+        guild = server or ctx.guild
 
         class Secret:
             pass
@@ -580,6 +587,140 @@ class Help(commands.Cog):
                             reverse=True, key=lambda r: r.position)], final='and')
                         if len(guild.roles) < 10 and guild == ctx.guild else f'{len(guild.roles) - 1} roles')
         await ctx.send(embed=embed)
+
+    def gen_steam_stats_graph(self, data):
+        graph_data = data['graph']
+        steps = timedelta(milliseconds=graph_data['step'])
+        timestamp = datetime.utcfromtimestamp(graph_data['start'] / 1000)
+        plots = graph_data['data']
+        times = []
+
+        for _ in plots:
+            timestamp -= steps
+            times.append(timestamp)
+
+        plt.style.use('dark_background')
+        w, h = figaspect(1 / 3)
+        fig, ax = plt.subplots(figsize=(w, h))
+        ax.grid(linestyle='-', linewidth='0.5', color='white')
+
+        plt.setp(plt.plot(list(reversed(times)), plots, linewidth=4), color='#00adee')
+
+        plt.title(f'Steam CM status over the last {human_timedelta(timestamp)[:-4]}', size=20)
+        plt.axis([None, None, 0, 100])
+        plt.xlabel('Time (Month-Day Hour)', fontsize=20)
+        plt.ylabel('Uptime (%)', fontsize=20)
+
+        plt.tight_layout(h_pad=20, w_pad=20)
+        buf = BytesIO()
+        plt.savefig(buf, format='png', transparent=True)
+        buf.seek(0)
+        plt.close()
+        return discord.File(buf, filename='graph.png')
+
+    @commands.command(aliases=['steamstatus'])
+    @commands.cooldown(1, 30, commands.BucketType.user)
+    async def steamstats(self, ctx):
+        async with ctx.typing():
+            r = await self.bot.session.get('https://crowbar.steamstat.us/gravity.json')
+            if r.status == 200:
+                data = await r.json()
+                graph = await self.bot.loop.run_in_executor(None, self.gen_steam_stats_graph, data)
+
+                code_to_city = {
+                    "ams": 'Amsterdam',
+                    "atl": 'Atlanta',
+                    "bom": 'Mumbai',
+                    "can": 'Guangzhou',
+                    "dxb": 'Dubai',
+                    "eat": 'Moses Lake',
+                    "fra": 'Frankfurt',
+                    "gru": 'Sao Paulo',
+                    "hkg": 'Hong Kong',
+                    "iad": 'Sterling',
+                    "jnb": 'Johannesburg',
+                    "lax": 'Los Angeles',
+                    "lhr": 'London',
+                    "lim": 'Lima',
+                    "lux": 'Luxembourg',
+                    "maa": 'Chennai',
+                    "mad": 'Madrid',
+                    "man": 'Manilla',
+                    "okc": 'Oklahoma City',
+                    "ord": 'Chicago',
+                    "par": 'Paris',
+                    "scl": 'Santiago',
+                    "sea": 'Seattle',
+                    "sgp": 'Singapore',
+                    "sha": 'Shanghai',
+                    "sto": 'Stockholm',
+                    "syd": 'Sydney',
+                    "tsn": 'Tianjin',
+                    "tyo": 'Tokyo',
+                    "vie": 'Vienna',
+                    'waw': 'Warsaw'
+                }
+                code_to_game = {
+                    "artifact": 'Artifact',
+                    "csgo": 'CS-GO',
+                    "dota2": 'DOTA 2',
+                    "tf2": 'TF2',
+                    "underlords": 'Underlords',
+                }
+                code_to_service = {
+                    "cms": 'Steam CMs',
+                    "community": 'Community',
+                    "store": 'Store',
+                    "webapi": 'Web API'
+                }
+                code_to_gamers = {
+                    "ingame": 'In-game',
+                    "online": 'Online',
+                }
+
+                cities = {code_to_city.get(service[0]): service[2] for service in data['services']
+                          if code_to_city.get(service[0])}
+                games = {code_to_game.get(service[0]): service[2] for service in data['services']
+                         if code_to_game.get(service[0])}
+                services = {code_to_service.get(service[0]): service[2] for service in data['services']
+                            if code_to_service.get(service[0])}
+                gamers = {code_to_gamers.get(service[0]): service[2] for service in data['services']
+                          if code_to_gamers.get(service[0])}
+
+                server_info = [
+                    f'{ctx.emoji.tick if country[1] == "OK" or float(country[1][:-1]) >= 80 else ctx.emoji.cross} '
+                    f'{country[0]} - {country[1] if country[1].split(".")[0].isdigit() else "100.0%"}' for country in
+                    sorted(cities.items(), key=lambda kv: (kv[0], kv[1]))
+                ]
+                game_info = [
+                    f'{ctx.emoji.tick if game[1] == "Normal" else ctx.emoji.cross} {game[0]} - {game[1]}'
+                    for game in sorted(games.items(), key=lambda kv: (kv[0], kv[1]))
+                ]
+                service_info = [
+                    f'{ctx.emoji.tick if service[1] == "Normal" or service[1].split()[0].split(".")[0].isdigit() else ctx.emoji.cross} ' \
+                    f'{service[0]} - {service[1]}'
+                    for service in sorted(services.items(), key=lambda kv: (kv[0], kv[1]))
+                ]
+
+                gamers = '\n'.join([f'{gamer[0]} - {gamer[1]}' for gamer in
+                                    sorted(gamers.items(), key=lambda kv: (kv[0], kv[1]))])
+                services = '\n'.join(service_info)
+                embed = discord.Embed(colour=0x00adee)
+                embed.set_author(
+                    name=f'Steam Stats: {"Fully operational" if data["online"] >= 70 else "Potentially unstable"} '
+                         f'{"👍" if data["online"] >= 70 else "👎"}',
+                    icon_url='https://www.freeiconspng.com/uploads/steam-icon-19.png')
+
+                embed.description = f'{services}\n\n{gamers}'
+                first = server_info[:len(server_info) // 2]
+                second = server_info[len(server_info) // 2:]
+                embed.add_field(name='CMs Servers:', value='\n'.join(first))
+                embed.add_field(name='\u200b', value='\n'.join(second))
+                embed.add_field(name='Games:', value='\n'.join(game_info))
+                embed.set_image(url="attachment://graph.png")
+                await ctx.send(embed=embed, file=graph)
+            else:
+                await ctx.send('Could not fetch Steam stats. Try again later.')
 
 
 def setup(bot):
