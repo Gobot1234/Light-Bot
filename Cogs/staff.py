@@ -155,10 +155,10 @@ class Staff(commands.Cog):
         """
         muted = discord.utils.get(ctx.guild.roles, name='Muted')
         if muted is None:
-            muted = await ctx.guild.create_role(name='Muted', colour=0x2f3136,
+            muted = await ctx.guild.create_role(name='Muted', colour=discord.Colour(0x2f3136),
                                                 reason='Created automatically as no muted role was found')
         for member in members:
-            if member == (ctx.author or self.bot.user):
+            if member in (ctx.author, self.bot.user):
                 return await ctx.send('Why would you do that???', delete_after=3)
             human_delta = human_timedelta(until.dt)
             await ctx.send(

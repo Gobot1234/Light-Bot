@@ -326,13 +326,13 @@ class Help(commands.Cog):
     async def stats(self, ctx):
         # memory_usage = self.process.memory_full_info().uss
         rawram = virtual_memory()
-        embed = discord.Embed(title=f'**{self.bot.user.name}** - Official Bot Server Invite & Bot information',
-                              description=f'**Commands loaded & Cogs loaded:** '
+        embed = discord.Embed(
+            title=f'**{self.bot.user.name}** - Official Bot Server Invite & Bot information',
+            description=f'**Commands loaded & Cogs loaded:** '
                                           f'`{len(self.bot.commands)}` commands loaded, '
                                           f'`{len(self.bot.cogs)}` extensions loaded\n\n'
                                           f'**Latest Changes:**\n{self.get_last_commits()}\n',
-                              colour=get_colour(ctx),
-                              timestamp=datetime.now())
+            colour=get_colour(ctx), timestamp=datetime.now())
         embed.set_author(name=str(self.bot.owner), icon_url=self.bot.owner.avatar_url)
         embed.set_thumbnail(url=self.bot.user.avatar_url)
         # statistics

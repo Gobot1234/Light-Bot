@@ -50,6 +50,16 @@ class Track(wavelink.Track):
         self.requester = kwargs.get('requester')
 
 
+class Queue(asyncio.Queue):
+
+    @property
+    def tracks(self):
+        return self._queue
+
+    def __len__(self):
+        return self.qsize()
+
+
 class Player(wavelink.Player):
     """Custom wavelink Player class."""
 
@@ -60,7 +70,7 @@ class Player(wavelink.Player):
         if self.context:
             self.dj: discord.Member = self.context.author
 
-        self.queue = asyncio.Queue()
+        self.queue = Queue()
         self.controller = None
 
         self.waiting = False
@@ -132,7 +142,6 @@ class Player(wavelink.Player):
             return
 
         channel = self.bot.get_channel(int(self.channel_id))
-        qsize = self.queue.qsize()
 
         embed = discord.Embed(title=f'{self.context.emoji.eq} Music Controller | {channel.name}',
                               colour=get_colour(self.context))
@@ -140,7 +149,7 @@ class Player(wavelink.Player):
         embed.set_thumbnail(url=track.thumb)
 
         embed.add_field(name='⏱ Duration', value=str(datetime.timedelta(milliseconds=int(track.length))))
-        embed.add_field(name='🎼 Queue Length', value=str(qsize))
+        embed.add_field(name='🎼 Queue Length', value=len(self.queue))
         embed.add_field(name=f'{self.context.emoji.voice} Volume', value=f'**`{self.volume}%`**')
         embed.add_field(name='👥 Requested By', value=track.requester.mention)
         embed.add_field(name='🎧 DJ', value=self.dj.mention)
@@ -373,14 +382,6 @@ class Music(commands.Cog):
         if isinstance(error, NoChannelProvided):
             return await ctx.send('You must be in a voice channel or provide one to connect to.')
 
-    async def cog_check(self, ctx: commands.Context):
-        """Cog wide check, which disallows commands in DMs."""
-        if not ctx.guild:
-            await ctx.send('Music commands are not available in Private Messages.')
-            return False
-
-        return True
-
     async def cog_before_invoke(self, ctx: commands.Context):
         """Coroutine called before command invocation.
         We mainly just want to check whether the user is in the players controller channel.
@@ -429,6 +430,7 @@ class Music(commands.Cog):
         return player.dj == ctx.author or ctx.author.guild_permissions.kick_members
 
     @commands.command()
+    @commands.guild_only()
     async def connect(self, ctx: commands.Context, *, channel: discord.VoiceChannel = None):
         """Connect to a voice channel."""
         player: Player = self.wavelink.get_player(guild_id=ctx.guild.id, cls=Player, context=ctx)
@@ -443,6 +445,7 @@ class Music(commands.Cog):
         await player.connect(channel.id)
 
     @commands.command()
+    @commands.guild_only()
     async def play(self, ctx: commands.Context, *, query: str):
         """Play or queue a song with the given query."""
         player: Player = self.wavelink.get_player(guild_id=ctx.guild.id, cls=Player, context=ctx)
@@ -474,6 +477,7 @@ class Music(commands.Cog):
             await player.do_next()
 
     @commands.command()
+    @commands.guild_only()
     async def pause(self, ctx: commands.Context):
         """Pause the currently playing song."""
         player: Player = self.wavelink.get_player(guild_id=ctx.guild.id, cls=Player, context=ctx)
@@ -498,6 +502,7 @@ class Music(commands.Cog):
             await ctx.send(f'{ctx.author.mention} has voted to pause the player.', delete_after=15)
 
     @commands.command()
+    @commands.guild_only()
     async def resume(self, ctx: commands.Context):
         """Resume a currently paused player."""
         player: Player = self.wavelink.get_player(guild_id=ctx.guild.id, cls=Player, context=ctx)
@@ -522,6 +527,7 @@ class Music(commands.Cog):
             await ctx.send(f'{ctx.author.mention} has voted to resume the player.', delete_after=15)
 
     @commands.command()
+    @commands.guild_only()
     async def skip(self, ctx: commands.Context):
         """Skip the currently playing song."""
         player: Player = self.wavelink.get_player(guild_id=ctx.guild.id, cls=Player, context=ctx)
@@ -552,6 +558,7 @@ class Music(commands.Cog):
             await ctx.send(f'{ctx.author.mention} has voted to skip the song.', delete_after=15)
 
     @commands.command()
+    @commands.guild_only()
     async def stop(self, ctx: commands.Context):
         """Stop the player and clear all internal states."""
         player: Player = self.wavelink.get_player(guild_id=ctx.guild.id, cls=Player, context=ctx)
@@ -573,6 +580,7 @@ class Music(commands.Cog):
             await ctx.send(f'{ctx.author.mention} has voted to stop the player.', delete_after=15)
 
     @commands.command(aliases=['v', 'vol'])
+    @commands.guild_only()
     async def volume(self, ctx: commands.Context, *, vol: int):
         """Change the players volume, between 1 and 100."""
         player: Player = self.wavelink.get_player(guild_id=ctx.guild.id, cls=Player, context=ctx)
@@ -590,6 +598,7 @@ class Music(commands.Cog):
         await ctx.send(f'Set the volume to **{vol}**%', delete_after=7)
 
     @commands.command(aliases=['mix'])
+    @commands.guild_only()
     async def shuffle(self, ctx: commands.Context):
         """Shuffle the players queue."""
         player: Player = self.wavelink.get_player(guild_id=ctx.guild.id, cls=Player, context=ctx)
@@ -597,13 +606,13 @@ class Music(commands.Cog):
         if not player.is_connected:
             return
 
-        if player.queue.qsize() < 3:
+        if len(player.queue) < 3:
             return await ctx.send('Add more songs to the queue before shuffling.', delete_after=15)
 
         if self.is_privileged(ctx):
             await ctx.send('An admin or DJ has shuffled the playlist.', delete_after=10)
             player.shuffle_votes.clear()
-            return random.shuffle(player.queue._queue)
+            return random.shuffle(player.queue.tracks)
 
         required = self.required(ctx)
         player.shuffle_votes.add(ctx.author)
@@ -611,11 +620,12 @@ class Music(commands.Cog):
         if len(player.shuffle_votes) >= required:
             await ctx.send('Vote to shuffle passed. Shuffling the playlist.', delete_after=10)
             player.shuffle_votes.clear()
-            random.shuffle(player.queue._queue)
+            random.shuffle(player.queue.tracks)
         else:
             await ctx.send(f'{ctx.author.mention} has voted to shuffle the playlist.', delete_after=15)
 
     @commands.command(hidden=True)
+    @commands.guild_only()
     async def vol_up(self, ctx: commands.Context):
         """Command used for volume up button."""
         player: Player = self.wavelink.get_player(guild_id=ctx.guild.id, cls=Player, context=ctx)
@@ -632,6 +642,7 @@ class Music(commands.Cog):
         await player.set_volume(vol)
 
     @commands.command(hidden=True)
+    @commands.guild_only()
     async def vol_down(self, ctx: commands.Context):
         """Command used for volume down button."""
         player: Player = self.wavelink.get_player(guild_id=ctx.guild.id, cls=Player, context=ctx)
@@ -648,6 +659,7 @@ class Music(commands.Cog):
         await player.set_volume(vol)
 
     @commands.command(aliases=['eq'])
+    @commands.guild_only()
     async def equalizer(self, ctx: commands.Context, *, equalizer: str):
         """Change the players equalizer."""
         player: Player = self.wavelink.get_player(guild_id=ctx.guild.id, cls=Player, context=ctx)
@@ -668,13 +680,14 @@ class Music(commands.Cog):
         eq = eqs.get(equalizer.lower(), None)
 
         if eq is None:
-            joined = "\n".join(eqs.keys())
+            joined = "\n".join(eqs.keys()).title()
             return await ctx.send(f'Invalid EQ provided. Valid EQs:\n\n{joined}')
 
         await ctx.send(f'Successfully changed equalizer to {equalizer}', delete_after=15)
         await player.set_eq(eq)
 
     @commands.command(aliases=['q', 'que'])
+    @commands.guild_only()
     async def queue(self, ctx: commands.Context):
         """Display the players queued songs."""
         player: Player = self.wavelink.get_player(guild_id=ctx.guild.id, cls=Player, context=ctx)
@@ -682,16 +695,17 @@ class Music(commands.Cog):
         if not player.is_connected:
             return
 
-        if player.queue.qsize() == 0:
+        if len(player.queue) == 0:
             return await ctx.send('There are no more songs in the queue.', delete_after=15)
 
-        entries = [track.title for track in player.queue._queue]
+        entries = [track.title for track in player.queue.tracks]
         pages = PaginatorSource(entries=entries)
         paginator = menus.MenuPages(source=pages, timeout=None, delete_message_after=True)
 
         await paginator.start(ctx)
 
     @commands.command(aliases=['np', 'now-playing', 'current'])
+    @commands.guild_only()
     async def now_playing(self, ctx: commands.Context):
         """Update the player controller."""
         player: Player = self.wavelink.get_player(guild_id=ctx.guild.id, cls=Player, context=ctx)
@@ -702,6 +716,7 @@ class Music(commands.Cog):
         await player.invoke_controller()
 
     @commands.command(aliases=['swap'])
+    @commands.guild_only()
     async def swap_dj(self, ctx: commands.Context, *, member: discord.Member = None):
         """Swap the current DJ to another member in the voice channel."""
         player: Player = self.wavelink.get_player(guild_id=ctx.guild.id, cls=Player, context=ctx)

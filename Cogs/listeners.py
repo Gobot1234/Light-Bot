@@ -382,7 +382,7 @@ class Listeners(commands.Cog):
                     return await ctx.reinvoke()
             title = f'{ctx.command} is on cooldown'
         elif isinstance(error, commands.BadArgument):
-            title = 'Bad argument'
+            title = f'Bad argument\nTry again with this format:\n> Usage: {ctx.command.signature}'
         elif isinstance(error, commands.NotOwner):
             title = 'You are not the owner of the bot'
         elif isinstance(error, commands.MissingPermissions):
@@ -427,6 +427,17 @@ class Listeners(commands.Cog):
         embed.add_field(name='Error message:', value=f'```py\n{type(error).__name__}: {error}\n```')
         await ctx.send(embed=embed, delete_after=180)
         self.bot.log.warning(format_error(error))
+
+    @commands.Cog.listener('on_message')
+    async def prefix_check(self, message):
+        if message.guild is None:
+            await message.channel.send(f'{self.bot.user.mention} prefixes\'s include: '
+                               f'=\n'
+                               f'Nothing (literally nothing before commands eg. help' 
+                               f'{self.bot.user.mention}')
+        if message.guild.me.mentioned_in(message) and not message.mention_everyone:
+            if not message.startswith(f'{self.bot.user.mention} '):
+                await message.channel.send('Type =prefixes to check prefixes')
 
 
 def setup(bot):

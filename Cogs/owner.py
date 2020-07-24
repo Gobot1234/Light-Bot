@@ -124,7 +124,7 @@ class Owner(commands.Cog):
             previous_lines = '\n'.join(split[:-1]) if split[:-1] else ''
             last_line = ''.join(split[-1:])
             if not last_line.strip().startswith('return'):
-                if not last_line.strip().startswith(('import', 'print', 'raise')):
+                if not last_line.strip().startswith(('import', 'print', 'raise', 'pass')):
                     body = f'{previous_lines}\n{" " * (len(last_line) - len(last_line.lstrip()))}return {last_line}'
             to_compile = f'async def func():\n{indent(body, "  ")}'
 

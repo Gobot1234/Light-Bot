@@ -57,23 +57,20 @@ class ImageConverter(commands.Converter):
         if isinstance(argument, discord.Attachment):
             return await argument.to_file()
         if URL_REGEX.match(argument):
-            if not argument.startswith(('http', 'https')):
-                argument = 'http://' + argument
+            if not argument.startswith('https'):
+                argument = 'https://' + argument
 
             resp = await ctx.bot.session.get(argument)
-            url = argument.strip('http://').strip('https://').split('?')[0]
+            url = argument.strip('https://').split('?')[0]
             name, extension = re.findall(r'/(?P<name>(?:.*?))\.(?P<extension>(?:.*))', url)[0]
             filename = f'{name}.{extension}'
             try:
                 bytes_io = BytesIO(await resp.read())
             except aiohttp.ContentTypeError:
                 raise commands.BadArgument(f'No image was able to be found at "{argument}"')
-            except aiohttp.ClientConnectorCertificateError:
-                argument = 'https://' + argument[-7:]
-                await self.convert(ctx, argument)
             else:
                 if not to_file:
-                    return bytes_ioi
+                    return bytes_io
                 return discord.File(bytes_io, filename=filename)
         else:
             raise commands.BadArgument(f'Image "{argument}" is not in a recognised format')

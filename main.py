@@ -44,7 +44,7 @@ class Light(commands.Bot):
         return await super().get_context(message, cls=cls or Contexter)
 
     def setup_logging(self):
-        log_level = logging.DEBUG
+        log_level = logging.WARNING
         format_string = '%(asctime)s : %(name)s - %(levelname)s | %(message)s'
         log_format = logging.Formatter(format_string)
 
