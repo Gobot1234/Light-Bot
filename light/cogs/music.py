@@ -10,6 +10,7 @@ and/or sell copies of the Software, and to permit persons to whom the
 Software is furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in
 all copies or substantial portions of the Software.
+
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
 OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -35,6 +36,8 @@ from discord.ext import commands, menus
 from .utils.checks import IncorrectChannelError, NoChannelProvided
 
 # URL matching REGEX...
+from .utils.context import Context
+
 URL_REG = re.compile(r"https?://(?:www\.)?.+")
 
 
@@ -55,7 +58,7 @@ class Player(wavelink.Player):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        self.context: commands.Context = kwargs.get("context", None)
+        self.context: Context = kwargs.get("context", None)
         if self.context:
             self.dj: discord.Member = self.context.author
 
@@ -134,7 +137,7 @@ class Player(wavelink.Player):
         qsize = self.queue.qsize()
 
         embed = discord.Embed(
-            title=f"{self.context.emoji.eq} Music Controller | {channel.name}", colour=get_colour(self.context)
+            title=f"{self.context.emoji.eq} Music Controller | {channel.name}", colour=discord.Colour.blurple()
         )
         embed.description = f"Now Playing:\n**`{track.title}`**\n\n"
         embed.set_thumbnail(url=track.thumb)
@@ -306,7 +309,7 @@ class PaginatorSource(menus.ListPageSource):
         return True
 
 
-async def node_event_hook(event: wavelink.WavelinkEvent) -> None:
+async def node_event_hook(event) -> None:
     """Node event hook."""
     if isinstance(event, (wavelink.TrackStuck, wavelink.TrackException, wavelink.TrackEnd)):
         await event.player.do_next()
@@ -317,7 +320,8 @@ class Music(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.wavelink = wavelink.Client(bot)
+        return
+        self.wavelink = wavelink.Client(bot=bot)
 
         bot.loop.create_task(self.start_nodes())
 
@@ -375,11 +379,7 @@ class Music(commands.Cog):
 
     async def cog_check(self, ctx: commands.Context):
         """Cog wide check, which disallows commands in DMs."""
-        if not ctx.guild:
-            await ctx.send("Music commands are not available in Private Messages.")
-            return False
-
-        return True
+        return bool(ctx.guild)
 
     async def cog_before_invoke(self, ctx: commands.Context):
         """Coroutine called before command invocation.

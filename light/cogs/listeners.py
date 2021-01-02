@@ -1,17 +1,24 @@
-from datetime import datetime
+from __future__ import annotations
+
 from random import choice
+from typing import Literal, Optional,  TYPE_CHECKING
 
 import asyncpg
 import discord
 from discord.ext import commands, tasks
 
-from .cogs.utils.formats import format_error, format_exec
+from .utils.context import Context
+from .utils.db import Config
+from .utils.formats import format_error
+
+if TYPE_CHECKING:
+    from .. import Light
 
 
 class Listeners(commands.Cog):
     """Listeners for the bot"""
 
-    def __init__(self, bot):
+    def __init__(self, bot: Light):
         self.bot = bot
         self.status.start()
 
@@ -35,188 +42,49 @@ class Listeners(commands.Cog):
         await self.bot.wait_until_ready()
 
     @commands.Cog.listener()
-    async def on_voice_state_update(self, member, before, after):
-        # load db check if they have a voice role get its name or change perms or log it
-        try:
-            if not before.channel and after.channel:
-                role = discord.utils.get(member.guild.roles, name="Voice")
-                await member.add_roles(role)
-            elif before.channel and not after.channel:
-                role = discord.utils.get(member.guild.roles, name="Voice")
-                await member.remove_roles(role)
-        except:
-            pass
-
-    @commands.Cog.listener()
-    async def on_guild_join(self, guild):
-        # TODO ask the owner what features they want
-        try:
-            blacklisted = await self.bot.db.fetch(
-                """
-                SELECT blacklisted FROM config
-                WHERE guild_id = $1;
-                """,
-                guild.id,
-            )
-        except asyncpg.UndefinedColumnError:
-            await self.bot.db.execute(
-                """
-                INSERT INTO config(
-                    guild_id, blacklisted,
-                    prefixes, colour,
-                    colour_bad, colour_good,
-                    join_message, logging_channel,
-                    logged_events
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                """,
-                guild.id,
-                False,
-                ["="],
-                discord.Colour.blurple().value,
-                discord.Colour.red().value,
-                discord.Colour.green().value,
-                None,
-                None,
-                [],
-            )
-            self.bot.config_cache[guild.id] = {
-                "blacklisted": False,
-                "prefixes": ["="],
-                "colour": discord.Colour.blurple(),
-                "colour_bad": discord.Colour.red(),
-                "colour_good": discord.Colour.green(),
-                "join_message": None,
-                "logging_channel": None,
-                "logged_events": [],
-            }
-
+    async def on_guild_join(self, guild: discord.Guild) -> None:
+        record = await Config.fetchrow(guild_id=guild.id)
+        if record is not None and record.blacklisted:
+            self.bot.log.info(f"Leaving {guild.name!r} - {guild.id} as it is a blacklisted guild")
+            await guild.leave()
         else:
-            if blacklisted is True:
-                self.bot.log.info(f'Leaving "{guild.name}" - "{guild.id}" as it is a blacklisted guild')
-                return await guild.leave()
-        embed = discord.Embed(
-            title="<:tick:688829439659737095> Server added!",
-            description="Thank you for adding me to your server!\nType `=help` to view my commands",
-            color=discord.Colour.green(),
-        )
-        embed.set_footer(text="Joined").timestamp = datetime.now()
-        m = None
-        for channel in guild.text_channels:
-            try:
-                m = await channel.send(embed=embed)
-            except discord.Forbidden:
-                continue
-            else:
-                return
-        if not isinstance(m, discord.Message):
-            perms = {
-                "view_audit_log": True,
-                "manage_roles": True,
-                "manage_channels": True,
-                "kick_members": True,
-                "ban_members": True,
-                "change_nickname": True,
-                "manage_nicknames": True,
-                "send_messages": True,
-                "manage_messages": True,
-                "embed_links": True,
-                "attach_files": True,
-                "read_message_history": True,
-                "use_external_emojis": True,
-                "connect": True,
-                "speak": True,
-            }
-            discord_perms = discord.Permissions(**perms)
-            pretty_perms = [f'• {perm_name.replace("_", " ").title()}' for perm_name, value in list(perms.items())]
-            pretty_perms.insert(0, "**General**\n")
-            pretty_perms.insert(8, "\n**Text Channels**\n")
-            pretty_perms.insert(15, "\n**Voice Permissions**\n")
-            pretty_perms = "\n".join(pretty_perms)
-
-            embed.add_field(
-                name=f"I cannot send messages in {guild}. Please can I have these permissions:",
-                value=(
-                    f"{pretty_perms}\n\n"
-                    "Or re-invite me with the link [here]"
-                    f"({discord.utils.oauth_url(self.bot.user.id, discord_perms, guild)})"
-                ),
+            record = await Config.insert(
+                guild_id=guild.id, blacklisted=False, prefixes=["="], logging_channel=None, logged_events=[],
             )
-            try:
-                await guild.owner.send(embed=embed)
-            except discord.Forbidden:
-                return
-        await self.bot.owner.send(self.bot.config_cache)
+        self.bot.config_cache[record.guild_id] = dict(record.original)
 
     @commands.Cog.listener()
-    async def on_guild_remove(self, guild):
-        await self.bot.db.execute(
-            """
-            DELETE FROM config
-            WHERE guild_id = $1;
-            """,
-            guild.id,
-        )
-        self.bot.config_cache.pop(guild.id)
-        self.bot.log.info(f"Leaving guild {guild.name} - {guild.id}")
+    async def on_guild_remove(self, guild: discord.Guild) -> None:
+        if not (await Config.fetchrow(guild_id=guild.id)).blacklisted:
+            await Config.delete(guild_id=guild.id)
+            self.bot.config_cache.pop(guild.id)
+            self.bot.log.info(f"Leaving guild {guild.name} - {guild.id}")
+
+    def log_for(
+        self, guild_id: int, *events: Literal["member_ban", "member_join", "member_kick"]
+    ) -> Optional[discord.TextChannel]:
+        for event in events:
+            if event in self.bot.config_cache[guild_id]["logged_events"]:
+                return self.bot.get_channel(self.bot.config_cache[guild_id]["logging_channel"])
 
     @commands.Cog.listener()
-    async def on_member_join(self, member):
-        """
-        {member} - The user's name
-        {server} - The server name
-        {@member} - Mentions the user
-        #channel - Mention a channel the normal way
-        """
-        # TODO check if a member joined before check if they want autoroling after leaving
-
-        guild_settings = self.bot.config_cache[member.guild.id]
-
-        if guild_settings["join_message"]:
-            msg = (
-                guild_settings["join_message"]
-                .replace("{{member}}", member.name)
-                .replace("{{@member}}", member.mention)
-                .replace("{{server}}", member.guild.name)
-            )
-            await member.send(msg)
-
-        # role_list = guild_settings['member role list'][m_id]
-        """
-        if m_id in role_list:  # add back their old roles if there are any in the users.json
-            reason = f'Adding back old roles as requested by {member.guild.owner}'
-            role_list = role_list[m_id]
-            for role in role_list:
-                await member.edit(discord.utils.get(member.guild.roles, name=role), reason=reason)
-        elif guild_settings['auto roling']:
-            role = guild_settings['auto_roling']
-            reason = f'Autoroled as requested by {member.guild.owner}'
-            await member.add_roles(discord.utils.get(member.guild.roles, name=role), reason=reason)"""
+    async def on_member_join(self, member: discord.Member):
+        if channel := self.log_for(member.guild.id, "member_join"):
+            await channel.send(f"{member.display_name} just joined")
 
     # ban & kick -------------------------------------------------------------------------------------------------------
 
     @commands.Cog.listener()
-    async def on_member_ban(self, guild, user):
-        if "member_ban" in self.bot.config_cache[guild.id]["logged_events"]:
-            embed = discord.Embed(
-                title=user,
-                description=f"{user} - {user.id} was banned from {guild} - {guild.id}",
-                color=discord.Color.red(),
-            )
-            embed.set_footer(text=f'ID: {user.id} • {datetime.now().strftime("%c")}', icon_url=user.avatar_url)
-            await self.bot.config_cache[user.guild.id]["logging_channel"].send(embed=embed)
+    async def on_member_ban(self, guild: discord.Guild, user: discord.User):
+        if channel := self.log_for(guild.id, "member_ban"):
+            await channel.send(f"{user.display_name} just got banned")
 
     @commands.Cog.listener()
-    async def on_member_kick(self, guild, user):
-        if "member_kick" in self.bot.config_cache[guild.id]["logged_events"]:
-            embed = discord.Embed(
-                title=user,
-                description=f"{user}-{user.id} was kicked from {guild} - {guild.id}",
-                color=discord.Color.red(),
-            )
-            embed.set_footer(text=f'ID: {user.id} • {datetime.now().strftime("%c")}', icon_url=user.avatar_url)
-            await self.bot.config_cache[user.guild.id]["logging_channel"].send(embed=embed)
+    async def on_member_kick(self, guild: discord.Guild, user: discord.User):
+        if channel := self.log_for(guild.id, "member_kick"):
+            await channel.send(f"{user.display_name} just got kicked")
 
+    """
     @commands.Cog.listener()
     async def on_member_remove(self, member):
         if "member_leave" in self.bot.config_cache[member.guild.id]["logged_events"]:
@@ -390,24 +258,22 @@ class Listeners(commands.Cog):
             else:
                 return
             await self.bot.config_cache[before.guild.id]["logging_channel"].send(embed=embed)
-
+    """
     # error handler ----------------------------------------------------------------------------------------------------
 
     @commands.Cog.listener()
-    async def on_command_error(self, ctx, error):
+    async def on_command_error(self, ctx: Context, error: commands.CommandError):
         """Command error handler"""
         if hasattr(ctx.command, "on_error"):
             return
         error = getattr(error, "original", error)
-        ignored = (commands.CommandNotFound, commands.CheckFailure)
-        if isinstance(error, ignored):
+        if isinstance(error, (commands.CommandNotFound, commands.CheckFailure)):
             return
         elif isinstance(error, commands.MissingRequiredArgument):
             title = f"{ctx.command} is missing a required argument {error.param}"
         elif isinstance(error, commands.CommandOnCooldown):
-            if ctx.guild:
-                if ctx.author.guild_permissions.manage_roles:
-                    return await ctx.reinvoke()
+            if ctx.guild and ctx.author.guild_permissions.manage_roles:
+                return await ctx.reinvoke()
             title = f"{ctx.command} is on cooldown"
         elif isinstance(error, commands.BadArgument):
             title = "Bad argument"
@@ -446,7 +312,7 @@ class Listeners(commands.Cog):
             title = "Unspecified error: please hang tight, whilst I try take a look at this"
             embed = discord.Embed(
                 title=f"Ignoring exception in command {ctx.command}",
-                description=f"```py\n{discord.utils.escape_markdown(format_exec(error))}```",
+                description=f"```py\n{discord.utils.escape_markdown(format_error(error))}```",
                 colour=discord.Colour.red(),
             )
             embed.set_author(
@@ -463,8 +329,7 @@ class Listeners(commands.Cog):
 
         embed = discord.Embed(title=f":warning: **{title}**", color=discord.Colour.red())
         embed.add_field(name="Error message:", value=f"```py\n{type(error).__name__}: {error}\n```")
-        await ctx.send(embed=embed, delete_after=180)
-        self.bot.log.warning(format_error(error))
+        self.bot.log.error("An error", exc_info=error)
 
 
 def setup(bot):

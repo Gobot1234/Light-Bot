@@ -1,27 +1,24 @@
-import typing
+from __future__ import annotations
+
 from collections import Counter
 from datetime import datetime
-from typing import Optional, Union
+from typing import Optional, Union, TYPE_CHECKING, Literal
 
 import discord
-from discord.ext import buttons, commands
-from psutil import Process
+from discord.ext import commands
 
 from .utils.db import Config
 from .utils.time import UserFriendlyTime, human_timedelta
 
+if TYPE_CHECKING:
+    from .. import Light
+
 
 class Staff(commands.Cog):
-    """These commands can only be used by people who already have the discord permissions to do so.
-    Please also note that the bot also requires these permissions to perform these commands
-    **Manage Messages permission is needed for:** - clear
-    **Ban Users permission is needed for:** - ban, unban
-    **Kick Members permission is needed for:** - kick
-    **Manage Roles permission is needed for:**  - mute, unmute"""
+    """These commands can only be used by people who already have the discord permissions to do so."""
 
-    def __init__(self, bot):
+    def __init__(self, bot: Light):
         self.bot = bot
-        self.process = Process()
 
     async def cog_check(self, ctx):
         if ctx.guild is None:
@@ -81,13 +78,6 @@ class Staff(commands.Cog):
             await ctx.send(to_send, delete_after=10)
         else:
             await ctx.send("No messages found or deleted")
-
-    async def get_uptime(self):
-        delta_uptime = datetime.utcnow() - self.bot.launch_time
-        hours, remainder = divmod(int(delta_uptime.total_seconds()), 3600)
-        minutes, seconds = divmod(remainder, 60)
-        days, hours = divmod(hours, 24)
-        return f"`{days}d, {hours}h, {minutes}m, {seconds}s`"
 
     # clear ------------------------------------------------------------------------------------------------------------
 
@@ -208,28 +198,6 @@ class Staff(commands.Cog):
             else:
                 await member.remove_roles(discord.utils.get(member.guild.roles, name="Muted"), reason=reason)
                 await ctx.send(f'Un-muted {member.display_name}, for reason "{reason}"')
-
-    @commands.command()
-    @commands.has_permissions(manage_roles=True)
-    async def announce(
-        self,
-        ctx,
-        channel: discord.TextChannel,
-        mention_everyone: typing.Optional[bool] = False,
-        *,
-        when: UserFriendlyTime(commands.clean_content),
-    ):
-        await ctx.send(f'I will send "{when.arg}", to {channel} in {human_timedelta(when.dt)}')
-        await discord.utils.sleep_until(when.dt)
-        embed = discord.Embed(
-            title=f"Announcement from {ctx.author}",
-            description=when.arg,
-            colour=self.bot.config_cache[ctx.guild.id]["colour"],
-        )
-        if not mention_everyone:
-            await channel.send(embed=embed)
-        else:
-            await channel.send("@everyone", embed=embed)
 
     #  ban -------------------------------------------------------------------------------------------------------------
 
@@ -413,7 +381,7 @@ class Staff(commands.Cog):
             await ctx.send(embed=embed)
 
     @logged_events.command(name="add")
-    async def e_add(self, ctx, event):
+    async def e_add(self, ctx, event: Literal[3]):
         self.bot.config_cache[ctx.guild.id]["logged_events"].append(event)
         await self.bot.db.execute(
             """

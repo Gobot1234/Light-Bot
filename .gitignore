@@ -2,4 +2,6 @@
 *.pyc
 
 light/config.py
+light/logs/**
 .idea
+venv

@@ -1,26 +1,27 @@
 # -*- coding: utf-8 -*-
 
 import discord
-from discord.ext import menus, commands
+from discord.ext import commands, menus
 
 
 class ScrollingPaginatorBase(menus.MenuPages):
     """The base for all scrolling paginators"""
+
     def __init__(self, *, source: list[str], timeout: float = 90):
         super().__init__(source, timeout=timeout, delete_message_after=True)
 
-    @menus.button('⏹')
+    @menus.button("⏹")
     async def stop_pages(self, payload):
         """Stops processing of reactions"""
         self.stop()
 
-    @menus.button('ℹ', skip_if=super()._skip_double_triangle_buttons)
+    @menus.button("ℹ", skip_if=super()._skip_double_triangle_buttons)
     async def show_info(self, payload):
         """Shows this message"""
-        embed = discord.Embed(title='Help with this message')
+        embed = discord.Embed(title="Help with this message")
         docs = [(button.emoji, button.action.__doc__) for button in self.buttons.values()]
-        docs = '\n'.join([f'{button} - {doc}' for (button, doc) in docs])
-        embed.description = f'What do the buttons do?:\n{docs}'
+        docs = "\n".join(f"{button} - {doc}" for (button, doc) in docs)
+        embed.description = f"What do the buttons do?:\n{docs}"
         return await self.message.edit(embed=embed)
 
     async def get_page(self, *args, **kwargs):
@@ -29,12 +30,23 @@ class ScrollingPaginatorBase(menus.MenuPages):
 
 class ScrollingPaginator(ScrollingPaginatorBase):
     """For paginating text"""
-    def __init__(self, *, title: str, entries: list, per_page: int = 10,
-                 author: str = None, author_icon_url: str = None,
-                 footer: str = None, footer_icon_url: str = None,
-                 joiner: str = '\n', timeout: int = 90,
-                 thumbnail: str = None, colour: discord.Colour = discord.Colour.blurple(),
-                 file: discord.File = None):
+
+    def __init__(
+        self,
+        *,
+        title: str,
+        entries: list,
+        per_page: int = 10,
+        author: str = None,
+        author_icon_url: str = None,
+        footer: str = None,
+        footer_icon_url: str = None,
+        joiner: str = "\n",
+        timeout: int = 90,
+        thumbnail: str = None,
+        colour: discord.Colour = discord.Colour.blurple(),
+        file: discord.File = None,
+    ):
 
         super().__init__(source=entries, timeout=timeout)
         self.title = title
@@ -57,7 +69,7 @@ class ScrollingPaginator(ScrollingPaginatorBase):
 
     def chunk(self, entries):
         for i in range(0, len(entries), self.per_page):
-            yield self.entries[i:i + self.per_page]
+            yield self.entries[i : i + self.per_page]
 
     async def send_initial_message(self, ctx, channel):
         page = self.entries[0]
@@ -111,17 +123,19 @@ class ScrollingPaginator(ScrollingPaginatorBase):
         if self.thumbnail:
             embed.set_thumbnail(url=self.thumbnail)
         if self.file:
-            embed.set_image(url=f'attachment://{self.file.filename}')
+            embed.set_image(url=f"attachment://{self.file.filename}")
         return embed
 
 
 class TextPaginator(ScrollingPaginator):
     """For paginating code blocks in an embed"""
+
     def __init__(self, *, text, title, python=True, **kwargs):
         super().__init__(title=title, entries=[text], per_page=1985, **kwargs)
         self.paginator = commands.Paginator(
             prefix=f'{kwargs.get("prefix", "```")}py' if python else kwargs.get("prefix", "```"),
-            suffix=kwargs.get('suffix', '```'))
+            suffix=kwargs.get("suffix", "```"),
+        )
         for line in text.splitlines():
             self.paginator.add_line(line)
         self.pages = [page for page in self.paginator.pages]
@@ -129,7 +143,7 @@ class TextPaginator(ScrollingPaginator):
     async def send_initial_message(self, ctx, channel):
         return await ctx.send(embed=await self.invoke(0))
 
-    @menus.button('⏹')
+    @menus.button("⏹")
     async def _stop(self, payload):
         """Deletes this message"""
         return await self.message.delete()

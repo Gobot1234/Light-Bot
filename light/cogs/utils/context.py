@@ -1,9 +1,11 @@
+from __future__ import annotations
+
 import asyncio
+from typing import TYPE_CHECKING, Union
 
 import discord
 from discord import HTTPException, PartialEmoji
 from discord.ext import commands
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ... import Light
@@ -11,6 +13,8 @@ if TYPE_CHECKING:
 
 class Context(commands.Context):
     bot: Light
+    author: Union[discord.User, discord.Member]
+    channel: discord.TextChannel
 
     class emoji:
         online = PartialEmoji(name="online", id=659012420735467540)

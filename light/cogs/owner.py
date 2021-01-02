@@ -1,19 +1,9 @@
-import asyncio
 import importlib
-import typing
-from contextlib import redirect_stdout
-from io import StringIO
-from platform import python_version
-from subprocess import getoutput
-from textwrap import indent
-from time import perf_counter
-
-import discord
 from discord.ext import commands
 
+from .utils.formats import format_error
+
 from .utils.checks import is_mod
-from .utils.converters import strip_code_block
-from light.Cogs.Utils.formats import format_error
 
 
 class Owner(commands.Cog):
@@ -37,7 +27,6 @@ class Owner(commands.Cog):
         """Used to restart the bot"""
         await ctx.message.add_reaction(ctx.emoji.loading)
         await ctx.send(f"**Restarting the Bot** {ctx.author.mention}")
-        open("channel.txt", "w+").write(str(ctx.channel.id))
         await self.bot.close()
 
     @commands.command(aliases=["ru"])
@@ -45,7 +34,7 @@ class Owner(commands.Cog):
     async def reloadutil(self, ctx, name: str):
         """Reload a Utils module"""
         try:
-            module_name = importlib.import_module(f"Utils.{name}")
+            module_name = importlib.import_module(f"utils.{name}")
             importlib.reload(module_name)
         except ModuleNotFoundError:
             return await ctx.send(f"I couldn't find module named **{name}** in Utils.")

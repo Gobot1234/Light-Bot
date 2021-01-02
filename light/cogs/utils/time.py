@@ -23,52 +23,11 @@ DEALINGS IN THE SOFTWARE."""
 import datetime
 import re
 
-import parsedatetime as pdt
+# import parsedatetime as pdt
 from dateutil.relativedelta import relativedelta
 from discord.ext import commands
 
-from .formats import Plural, human_join
-
-
-class Timer:
-    __slots__ = ("args", "kwargs", "event", "id", "created_at", "expires")
-
-    def __init__(self, *, record):
-        self.id = record["id"]
-
-        extra = record["extra"]
-        self.args = extra.get("args", [])
-        self.kwargs = extra.get("kwargs", {})
-        self.event = record["event"]
-        self.created_at = record["created"]
-        self.expires = record["expires"]
-
-    @classmethod
-    def temporary(cls, *, expires, created, event, args, kwargs):
-        pseudo = {
-            "id": None,
-            "extra": {"args": args, "kwargs": kwargs},
-            "event": event,
-            "created": created,
-            "expires": expires,
-        }
-        return cls(record=pseudo)
-
-    def __eq__(self, other):
-        try:
-            return self.id == other.id
-        except AttributeError:
-            return False
-
-    def __hash__(self):
-        return hash(self.id)
-
-    @property
-    def human_delta(self):
-        return human_timedelta(self.created_at)
-
-    def __repr__(self):
-        return f"<Timer created={self.created_at} expires={self.expires} event={self.event}>"
+from .formats import human_join
 
 
 class ShortTime:
@@ -99,7 +58,7 @@ class ShortTime:
 
 
 class HumanTime:
-    calendar = pdt.Calendar(version=pdt.VERSION_CONTEXT_STYLE)
+    # calendar = pdt.Calendar(version=pdt.VERSION_CONTEXT_STYLE)
 
     def __init__(self, argument, *, now=None):
         now = now or datetime.datetime.utcnow()
