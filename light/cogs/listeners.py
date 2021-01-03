@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import traceback
 from random import choice
 from typing import Literal, Optional,  TYPE_CHECKING
 
@@ -264,6 +265,8 @@ class Listeners(commands.Cog):
     @commands.Cog.listener()
     async def on_command_error(self, ctx: Context, error: commands.CommandError):
         """Command error handler"""
+        raise error
+
         if hasattr(ctx.command, "on_error"):
             return
         error = getattr(error, "original", error)

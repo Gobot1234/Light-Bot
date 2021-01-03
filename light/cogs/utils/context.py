@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, Union, Optional
 
 import discord
 from discord import HTTPException, PartialEmoji
@@ -39,18 +39,23 @@ class Context(commands.Context):
         cpu = PartialEmoji(name="cpu", id=622621524418887680)
         ram = PartialEmoji(name="ram", id=689212498544820301)
 
+    class colour:
+        steam = discord.Colour(0x00ADEE)
+
     async def bool(self, value: bool) -> None:
         try:
             await self.message.add_reaction(self.emoji.tick if value else self.emoji.cross)
         except HTTPException:
             pass
 
-    async def bin(self, message: discord.Message, *, timeout: float = 90):
-        def check(reaction, user):
+    async def bin(self, message: Optional[discord.Message] = None, *, timeout: float = 90.0) -> None:
+        message = message or self.message
+
+        def check(reaction: discord.Reaction, user: discord.User) -> bool:
             return user == self.author and str(reaction.emoji) == "🗑️"
 
         try:
-            reaction, user = await self.bot.wait_for("reaction_add", timeout=timeout, check=check)
+            _, __ = await self.bot.wait_for("reaction_add", timeout=timeout, check=check)
         except asyncio.TimeoutError:
             try:
                 await message.clear_reactions()

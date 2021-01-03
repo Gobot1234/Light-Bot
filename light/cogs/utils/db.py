@@ -34,12 +34,12 @@ def wrap_coro(func: Callable[..., Coroutine]) -> Callable[..., Coroutine]:
         """Wrapper around returned async functions which makes asyncpg.Records types.SimpleNamespaces"""
         ret = await func(*args, **kwargs)
         if isinstance(ret, Record):
-            return SimpleNamespace(**dict(ret.items()), original=ret)
+            return SimpleNamespace(**dict(ret))
         if isinstance(ret, Iterable):
             new_return = []
             for element in ret:
                 if isinstance(element, Record):
-                    element = SimpleNamespace(**dict(element.items()), original=element)
+                    element = SimpleNamespace(**dict(element))
 
                 new_return.append(element)
             return new_return

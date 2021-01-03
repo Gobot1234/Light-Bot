@@ -10,6 +10,7 @@ from typing import Optional
 
 import aiohttp
 import discord
+import steam
 from asyncpg.pool import Pool
 from discord.ext import commands
 from donphan import create_pool
@@ -45,6 +46,7 @@ class Light(commands.Bot):
         self.db: Optional[Pool] = None
         self.config_cache: dict[int, ConfigCache] = {}
         self.session: Optional[aiohttp.ClientSession] = None
+        self.client = steam.Client()
         self.launch_time = datetime.utcnow()
         cogs = Path("cogs")
         self.initial_extensions = [f.with_suffix("") for f in cogs.iterdir() if f.is_file() and f.suffix == ".py"]
@@ -74,6 +76,12 @@ class Light(commands.Bot):
     async def start(self):
         self.setup_logging()
         self.log.info("Setting up DB")
+
+        for extension in self.initial_extensions:
+            self.load_extension(resolve_path(extension))
+
+        self.load_extension("jishaku")
+
         try:
             self.db: Pool = await create_pool(
                 # dsn=config.DATABASE_URL,
@@ -105,11 +113,7 @@ class Light(commands.Bot):
         self.session = aiohttp.ClientSession()
         print(f'Extensions to be loaded are {human_join([str(f) for f in self.initial_extensions])}')
 
-        for extension in self.initial_extensions:
-            self.load_extension(resolve_path(extension))
-
-        self.load_extension("jishaku")
-
+        # self.loop.create_task(self.client.start())
         await super().start(config.TOKEN)
 
     async def on_command(self, ctx: Context) -> None:

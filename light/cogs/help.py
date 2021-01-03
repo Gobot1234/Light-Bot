@@ -2,20 +2,31 @@ from __future__ import annotations
 import difflib
 from datetime import datetime, timedelta
 from io import BytesIO
-from typing import  TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, menus
 from humanize import naturaltime
 from jishaku.functools import executor_function
 from matplotlib import pyplot as plt
 from matplotlib.figure import figaspect
 
 from .utils.context import Context
+from .utils.converters import UserConverter
 from .utils.formats import human_join
 
 if TYPE_CHECKING:
     from .. import Light
+
+
+class HelpPages(menus.ListPageSource):
+    def format_page(self, menu: HelpMenu, page: discord.Embed):
+        return page
+
+
+class HelpMenu(menus.MenuPages):
+    def __init__(self, entries: list[discord.Embed]):
+        super().__init__(source=HelpPages(entries, per_page=1))
 
 
 class EmbedHelpCommand(commands.HelpCommand):
@@ -29,20 +40,21 @@ class EmbedHelpCommand(commands.HelpCommand):
         return f"{command.qualified_name} {command.signature}"
 
     async def send_bot_help(self, mapping: dict[commands.Cog, list[commands.Command]]) -> None:
-        embed = discord.Embed(title="Bot Commands", colour=self.COLOUR)
-
+        entries = []
         for cog, commands in mapping.items():
-            name = "No Category" if cog is None else cog.qualified_name
+            name = getattr(cog, "qualified_name", None) or "No Category"
+            embed = discord.Embed(title=f"{name}'s commands", colour=self.COLOUR)
             filtered = await self.filter_commands(commands, sort=True)
             if filtered:
-                value = "\u2002".join(f"**{c.name}**" for c in commands)
+                value = "\n".join(f"**{c.name}**: {c.short_doc}" for c in commands)
                 if cog and cog.description:
                     value = f"{cog.description}\n\n{value}"
 
-                embed.add_field(name=name, value=value)
+                embed.add_field(name="\u200b", value=value)
 
-        embed.set_footer(text=self.get_ending_note())
-        await self.get_destination().send(embed=embed)
+            embed.set_footer(text=self.get_ending_note())
+            entries.append(embed)
+        await HelpMenu(entries).start(self.context)
 
     async def send_cog_help(self, cog):
         embed = discord.Embed(title=f"{cog.qualified_name} Commands", colour=self.COLOUR)
@@ -79,17 +91,18 @@ class EmbedHelpCommand(commands.HelpCommand):
     async def command_not_found(self, string: str) -> None:
         ctx = self.context
         command_names = [command.name for command in ctx.bot.commands]
-        close_commands = difflib.get_close_matches(string, command_names, len(command_names), 0)
-        joined = "\n".join(f"`{command}`" for command in close_commands[:2])
+        close_commands = difflib.get_close_matches(string, command_names, n=2, cutoff=0.75)
+        joined = "\n".join(f"`{command}`" for command in close_commands)
 
         embed = discord.Embed(
             title="Error!",
             description=(
-                rf"**Error 404:** Command or category {string!r} not found ¯\_(ツ)_/¯\nPerhaps you meant:\n{joined}"
+                f"**Error 404:** Command or category {string!r} not found\nPerhaps you meant:\n{joined}"
+                if joined
+                else f"**Error 404:** Command or category {string!r} not found"
             ),
             colour=discord.Colour.red(),
         )
-        embed.add_field(name="The current loaded cogs are", value=f"(`{'`, `'.join(ctx.bot.cogs)}`) :gear:")
         await self.get_destination().send(embed=embed)
 
 
@@ -125,7 +138,8 @@ class Help(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command(aliases=["member"])
-    async def user(self, ctx: Context, user: discord.Member = None):
+    async def user(self, ctx: Context, user: discord.User = None):
+        """Simple user info"""
         user = user or ctx.author
 
         voice_perms = [
@@ -163,45 +177,55 @@ class Help(commands.Cog):
         embed.set_thumbnail(url=user.avatar_url)
         embed.add_field(name="ID:", value=user.id)
         embed.add_field(name=f"{user.display_name} created their account:", value=naturaltime(user.created_at))
-        embed.add_field(name=f"{user.display_name} joined this guild:", value=naturaltime(user.joined_at))
+        if isinstance(user, discord.Member):
+            embed.add_field(name=f"{user.display_name} joined this guild:", value=naturaltime(user.joined_at))
 
-        embed.add_field(
-            name=f'{user.display_name} has these permission{"s" if len(perms) != 1 else ""} in this channel:',
-            value=perms if "Administrator" not in perms else "All as they are Admin",
-        )
-        embed.add_field(
-            name=f'{user.display_name} has these permission{"s" if len(perms) != 1 else ""} denied in this channel:',
-            value=perms_denied,
-        )
-        if user.premium_since:
-            embed.add_field(name=f"{user.display_name} has been boosting since:", value=naturaltime(user.premium_since))
-
-        embed.add_field(
-            name=f"Roles ({len(user.roles) - 1})",
-            value=human_join(
-                [
-                    role.mention
-                    for role in sorted(
-                        [role for role in user.roles if role != ctx.guild.default_role],
-                        reverse=True,
-                        key=lambda r: r.position,
-                    )
-                ],
-                final="and",
+            embed.add_field(
+                name=f'{user.display_name} has these permission{"s" if len(perms) != 1 else ""} in this channel:',
+                value=perms if "Administrator" not in perms else "All as they are Admin",
             )
-            if len(user.roles) != 0
-            else "None",
-            inline=False,
-        )
-        embed.add_field(
-            name="Status:",
-            value=(
-                f"{key_to_emoji[str(user.status)]} "
-                f'{str(user.status).title().replace("Dnd", "Do Not Disturb")}\n'
-                f"Is on mobile: {user.is_on_mobile()}"
-            ),
-        )
+            embed.add_field(
+                name=f'{user.display_name} has these permission{"s" if len(perms) != 1 else ""} denied in this channel:',
+                value=perms_denied,
+            )
+            if user.premium_since:
+                embed.add_field(
+                    name=f"{user.display_name} has been boosting since:", value=naturaltime(user.premium_since)
+                )
+
+            embed.add_field(
+                name=f"Roles ({len(user.roles) - 1})",
+                value=human_join(
+                    [role.mention for role in sorted(user.roles[1:], reverse=True, key=lambda r: r.position)],
+                    final="and",
+                )
+                if len(user.roles) != 0
+                else "None",
+                inline=False,
+            )
+            embed.add_field(
+                name="Status:",
+                value=(
+                    f"{key_to_emoji[str(user.status)]} "
+                    f'{str(user.status).title().replace("Dnd", "Do Not Disturb")}\n'
+                ),
+            )
         await ctx.send(embed=embed)
+
+    @commands.command()
+    async def steam_user(self, ctx: commands.Context, user: UserConverter):
+        """Show some basic info on a steam user"""
+        if user is None:
+            return await ctx.send("User not found")
+
+        embed = discord.Embed(description=user.name, timestamp=user.created_at)
+        embed.set_thumbnail(url=user.avatar_url)
+        embed.add_field(name="64 bit ID:", value=str(user.id64))
+        embed.add_field(name="Currently playing:", value=str(user.game) or "Nothing")
+        embed.add_field(name="Friends:", value=str(len(await user.friends())))
+        embed.add_field(name="Games:", value=str(len(await user.games())))
+        embed.set_footer(text="Account created on")
+        await ctx.send(f"Info on {user.name}", embed=embed)
 
     @executor_function
     def gen_steam_stats_graph(self, data: dict) -> discord.File:
@@ -234,9 +258,10 @@ class Help(commands.Cog):
         plt.close()
         return discord.File(buf, filename="graph.png")
 
-    @commands.command(aliases=["steamstatus", "ss"])
+    @commands.command(aliases=["steamstats", "steamstatus", "ss"])
     @commands.cooldown(1, 30, commands.BucketType.user)
-    async def steamstats(self, ctx: Context):
+    async def steam_stats(self, ctx: Context):
+        """Get Steam's current status"""
         async with ctx.typing():
             r = await self.bot.session.get("https://crowbar.steamstat.us/gravity.json")
             if r.status != 200:
@@ -328,7 +353,7 @@ class Help(commands.Cog):
             )
 
             services = "\n".join(service_info)
-            embed = discord.Embed(colour=0x00ADEE)
+            embed = discord.Embed(colour=ctx.colour.steam)
             embed.set_author(
                 name=(
                     f'Steam Stats: {"Fully operational" if data["online"] >= 70 else "Potentially unstable"} '
@@ -339,7 +364,7 @@ class Help(commands.Cog):
 
             embed.description = f"{services}\n\n{gamers}"
             first = server_info[: len(server_info) // 2]
-            second = server_info[len(server_info) // 2 :]
+            second = server_info[len(server_info) // 2:]
             embed.add_field(name="CMs Servers:", value="\n".join(first))
             embed.add_field(name="\u200b", value="\n".join(second))
             embed.add_field(name="Games:", value="\n".join(game_info))
