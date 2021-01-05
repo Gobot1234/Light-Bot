@@ -1,20 +1,19 @@
 import asyncio
 import re
-from datetime import timedelta, datetime
-from typing import NamedTuple, Union
+from datetime import datetime, timedelta
 from io import BytesIO
+from typing import NamedTuple, Union
 
 import discord
+from discord.ext import commands
 from humanize import naturaltime
 from jishaku.functools import executor_function
 from matplotlib import pyplot as plt
 from matplotlib.figure import figaspect
-from discord.ext import commands
-
-from .utils.context import Context
-from .utils.converters import SteamUser
 
 from . import Cog
+from .utils.context import Context
+from .utils.converters import SteamUser
 
 
 class ServiceInfo:

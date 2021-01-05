@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING, Union, Optional
+from typing import TYPE_CHECKING, Optional, Union
 
 import discord
 from discord import HTTPException, PartialEmoji

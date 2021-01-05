@@ -1,22 +1,21 @@
 from __future__ import annotations
+
 import importlib
-from discord.ext import commands
 from typing import TYPE_CHECKING
 
+from discord.ext import commands
+
+from . import Cog
+from .utils.checks import is_mod
 from .utils.context import Context
 from .utils.formats import format_error
 
-from .utils.checks import is_mod
 if TYPE_CHECKING:
     from .. import Light
 
 
-class Owner(commands.Cog, command_attrs={"hidden": True}):
+class Owner(Cog, command_attrs={"hidden": True}):
     """These commands can only be used by the owner of the bot, or the guild owner"""
-
-    def __init__(self, bot: Light):
-        self.bot = bot
-        self.first = True
 
     async def cog_check(self, ctx):
         if await ctx.bot.is_owner(ctx.author):

@@ -5,27 +5,17 @@ from typing import TYPE_CHECKING, Annotated
 
 import discord
 from discord.ext import commands
-from donphan import SQLType, Column
+from donphan import Column, SQLType
 
+from . import Cog
 from .utils.db import Config, Table
 
 if TYPE_CHECKING:
-    from .. import Light
     from .utils.context import Context
 
 
-class MuteEntry(Table):
-    id: Annotated[int, SQLType.BigInt(), Column(primary_key=True)]
-    reason: str
-    created_at: datetime
-    ends_at: datetime
-
-
-class Staff(commands.Cog):
+class Staff(Cog):
     """These commands can only be used by people who already have the discord permissions to do so."""
-
-    def __init__(self, bot: Light):
-        self.bot = bot
 
     async def cog_check(self, ctx: Context):
         if ctx.guild is None:

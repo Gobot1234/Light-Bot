@@ -5,7 +5,10 @@ import inspect
 from types import SimpleNamespace
 from typing import (
     TYPE_CHECKING,
+    Annotated,
     Any,
+    Callable,
+    Coroutine,
     Iterable,
     Optional,
     Protocol,
@@ -13,9 +16,6 @@ from typing import (
     get_args,
     get_origin,
     runtime_checkable,
-    Annotated,
-    Callable,
-    Coroutine,
 )
 
 from asyncpg import Connection, Record
@@ -74,21 +74,14 @@ class AnnotatedTableMeta(FetchableMeta):
         for name, type in annotations.items():
             sql_type = None
             if isinstance(type, str):
-                type = new_value = eval(type)
-                if isinstance(new_value, AnnotatedAlias):
-                    if len(new_value.__metadata__) == 1:
-                        sql_type = new_value.__metadata__[0]
-                    else:
-                        sql_type, column = new_value.__metadata__
-                        attrs[name] = column
+                type = eval(type)
+                if isinstance(type, AnnotatedAlias):
+                    attrs[name] = type.__metadata__[0]
+                    sql_type = type.__origin__
             annotations[name] = sql_type if sql_type is not None else type
-            if not isinstance(annotations[name], SQLType):
-                origin = get_origin(type)
-                args = get_args(type)
-                if origin:
-                    annotations[name] = [*args] if issubclass(origin, list) else args[0]
-                else:
-                    annotations[name] = SQLType._from_python_type(type)
+
+            if (origin := get_origin(type)) and issubclass(origin or object, list):
+                annotations[name] = [*get_args(type)]
 
         return super().__new__(mcs, name, bases, attrs)
 
@@ -180,7 +173,7 @@ class Table(Table, metaclass=AnnotatedTableMeta):
             ...
 
         @classmethod
-        async def update_record(cls, record: T, *, connection: Connection = None, **kwargs) -> None:
+        async def update_record(cls, record: T, *, connection: Connection = None, **kwargs: Any) -> None:
             ...
 
         @classmethod
@@ -189,6 +182,6 @@ class Table(Table, metaclass=AnnotatedTableMeta):
 
 
 class Config(Table):
-    guild_id: Annotated[int, SQLType.BigInt(), Column(primary_key=True)]
+    guild_id: Annotated[SQLType.BigInt, Column(primary_key=True)]
     blacklisted: bool
     prefixes: list[str]

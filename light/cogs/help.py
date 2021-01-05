@@ -8,8 +8,8 @@ from discord.ext import commands, menus
 from humanize import naturaltime
 
 from .utils.context import Context
-from .utils.paginator import InfoPaginator
 from .utils.formats import human_join
+from .utils.paginator import InfoPaginator
 
 if TYPE_CHECKING:
     from .. import Light
