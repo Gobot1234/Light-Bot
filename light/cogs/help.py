@@ -1,8 +1,10 @@
 from __future__ import annotations
+
+import asyncio
 import difflib
 from datetime import datetime, timedelta
 from io import BytesIO
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 import discord
 from discord.ext import commands, menus
@@ -12,21 +14,12 @@ from matplotlib import pyplot as plt
 from matplotlib.figure import figaspect
 
 from .utils.context import Context
-from .utils.converters import UserConverter
+from .utils.paginator import InfoPaginator
+from .utils.converters import SteamUser
 from .utils.formats import human_join
 
 if TYPE_CHECKING:
     from .. import Light
-
-
-class HelpPages(menus.ListPageSource):
-    def format_page(self, menu: HelpMenu, page: discord.Embed):
-        return page
-
-
-class HelpMenu(menus.MenuPages):
-    def __init__(self, entries: list[discord.Embed]):
-        super().__init__(source=HelpPages(entries, per_page=1))
 
 
 class EmbedHelpCommand(commands.HelpCommand):
@@ -42,19 +35,20 @@ class EmbedHelpCommand(commands.HelpCommand):
     async def send_bot_help(self, mapping: dict[commands.Cog, list[commands.Command]]) -> None:
         entries = []
         for cog, commands in mapping.items():
-            name = getattr(cog, "qualified_name", None) or "No Category"
-            embed = discord.Embed(title=f"{name}'s commands", colour=self.COLOUR)
-            filtered = await self.filter_commands(commands, sort=True)
-            if filtered:
+            if await self.filter_commands(commands):
+                name = getattr(cog, "qualified_name", "No Category")
+                embed = discord.Embed(title=f"{name}'s commands", colour=self.COLOUR)
                 value = "\n".join(f"**{c.name}**: {c.short_doc}" for c in commands)
                 if cog and cog.description:
                     value = f"{cog.description}\n\n{value}"
 
                 embed.add_field(name="\u200b", value=value)
 
-            embed.set_footer(text=self.get_ending_note())
-            entries.append(embed)
-        await HelpMenu(entries).start(self.context)
+                embed.set_footer(text=self.get_ending_note())
+                entries.append(embed)
+        source = menus.ListPageSource(entries, per_page=1)
+        source.format_page = lambda menu, page: page
+        await InfoPaginator(source).start(self.context)
 
     async def send_cog_help(self, cog):
         embed = discord.Embed(title=f"{cog.qualified_name} Commands", colour=self.COLOUR)
@@ -132,7 +126,7 @@ class Help(commands.Cog):
             colour=discord.Colour.blurple(),
         )
         if member.is_avatar_animated():
-            embed.description += f" | [GIF]({member.avatar_url_as(format='gif')})"
+            embed.description = f"{embed.description} | [GIF]({member.avatar_url_as(format='gif')})"
         embed.set_author(name=member.display_name, icon_url=member.avatar_url)
         embed.set_image(url=member.avatar_url_as(format="gif" if member.is_avatar_animated() else "png"))
         await ctx.send(embed=embed)
@@ -142,52 +136,19 @@ class Help(commands.Cog):
         """Simple user info"""
         user = user or ctx.author
 
-        voice_perms = [
-            "deafen_members",
-            "move_members",
-            "mute_members",
-            "priority_speaker",
-            "speak",
-            "stream",
-            "use_voice_activation",
-            "connect",
-        ]
         key_to_emoji = {
-            "online": ctx.emoji.online,
-            "idle": ctx.emoji.idle,
-            "dnd": ctx.emoji.dnd,
-            "offline": ctx.emoji.offline,
+            emoji_name: getattr(ctx.emoji, emoji_name) for emoji_name in ("online", "idle", "dnd", "offline")
         }
-
-        perms = [
-            f"{ctx.emoji.tick} {perm.title()}"
-            for perm, val in sorted(dict(user.permissions_in(ctx.channel)).items())
-            if val and perm not in voice_perms
-        ]
-        perms_denied = [
-            f"{ctx.emoji.cross} {perm.title()}"
-            for perm, val in sorted(dict(user.permissions_in(ctx.channel)).items())
-            if not val and perm not in voice_perms
-        ]
-        perms = "\n".join(perms).replace("_", " ").replace("Tts", "TTS") if perms else "None"
-        perms_denied = "\n".join(perms_denied).replace("_", " ").replace("Tts", "TTS") if perms_denied else "None"
 
         embed = discord.Embed(title=f"Info on {user}", colour=user.colour)
         embed.set_author(name=user.display_name, icon_url=user.avatar_url)
         embed.set_thumbnail(url=user.avatar_url)
         embed.add_field(name="ID:", value=user.id)
         embed.add_field(name=f"{user.display_name} created their account:", value=naturaltime(user.created_at))
+
         if isinstance(user, discord.Member):
             embed.add_field(name=f"{user.display_name} joined this guild:", value=naturaltime(user.joined_at))
 
-            embed.add_field(
-                name=f'{user.display_name} has these permission{"s" if len(perms) != 1 else ""} in this channel:',
-                value=perms if "Administrator" not in perms else "All as they are Admin",
-            )
-            embed.add_field(
-                name=f'{user.display_name} has these permission{"s" if len(perms) != 1 else ""} denied in this channel:',
-                value=perms_denied,
-            )
             if user.premium_since:
                 embed.add_field(
                     name=f"{user.display_name} has been boosting since:", value=naturaltime(user.premium_since)
@@ -196,12 +157,10 @@ class Help(commands.Cog):
             embed.add_field(
                 name=f"Roles ({len(user.roles) - 1})",
                 value=human_join(
-                    [role.mention for role in sorted(user.roles[1:], reverse=True, key=lambda r: r.position)],
+                    [role.mention for role in reversed(user.roles[1:])],
                     final="and",
                 )
-                if len(user.roles) != 0
-                else "None",
-                inline=False,
+                if user.roles[1:] else "None",
             )
             embed.add_field(
                 name="Status:",
@@ -213,19 +172,23 @@ class Help(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.command()
-    async def steam_user(self, ctx: commands.Context, user: UserConverter):
+    async def steam_user(self, ctx: Context, user: SteamUser):
         """Show some basic info on a steam user"""
-        if user is None:
-            return await ctx.send("User not found")
-
+        friends, games = await asyncio.gather(user.friends(), user.games())
         embed = discord.Embed(description=user.name, timestamp=user.created_at)
         embed.set_thumbnail(url=user.avatar_url)
         embed.add_field(name="64 bit ID:", value=str(user.id64))
         embed.add_field(name="Currently playing:", value=str(user.game) or "Nothing")
-        embed.add_field(name="Friends:", value=str(len(await user.friends())))
-        embed.add_field(name="Games:", value=str(len(await user.games())))
+        embed.add_field(name="Friends:", value=str(len(friends)))
+        embed.add_field(name="Games:", value=str(len(games)))
         embed.set_footer(text="Account created on")
         await ctx.send(f"Info on {user.name}", embed=embed)
+
+    @steam_user.error
+    async def on_steam_user_error(self, ctx: Context, error: commands.CommandError):
+        if isinstance(error, commands.BadArgument):
+            return await ctx.send("User not found")
+        raise error
 
     @executor_function
     def gen_steam_stats_graph(self, data: dict) -> discord.File:
@@ -310,7 +273,12 @@ class Help(commands.Cog):
                 "tf2": "TF2",
                 "underlords": "Underlords",
             }
-            code_to_service = {"cms": "Steam CMs", "community": "Community", "store": "Store", "webapi": "Web API"}
+            code_to_service = {
+                "cms": "Steam CMs",
+                "community": "Community",
+                "store": "Store",
+                "webapi": "Web API",
+            }
             code_to_gamers = {
                 "ingame": "In-game",
                 "online": "Online",
@@ -359,12 +327,12 @@ class Help(commands.Cog):
                     f'Steam Stats: {"Fully operational" if data["online"] >= 70 else "Potentially unstable"} '
                     f'{"👍" if data["online"] >= 70 else "👎"}'
                 ),
-                icon_url="https://www.freeiconspng.com/uploads/steam-icon-19.png",
+                icon_url=ctx.emoji.steam.url,
             )
 
             embed.description = f"{services}\n\n{gamers}"
             first = server_info[: len(server_info) // 2]
-            second = server_info[len(server_info) // 2:]
+            second = server_info[len(server_info) // 2 :]
             embed.add_field(name="CMs Servers:", value="\n".join(first))
             embed.add_field(name="\u200b", value="\n".join(second))
             embed.add_field(name="Games:", value="\n".join(game_info))

@@ -89,7 +89,6 @@ class Light(commands.Bot):
                 database="database",
                 user="admin",
                 password="password",
-                command_timeout=60,
             )
         except Exception as exc:
             self.log.error(f"Could not set up PostgreSQL. Exiting...", exc_info=exc)
@@ -104,8 +103,6 @@ class Light(commands.Bot):
                     continue
                 self.config_cache[guild.guild_id] = {
                     "prefixes": guild.prefixes,
-                    "logging_channel": self.get_channel(guild.logging_channel),
-                    "logged_events": guild.logged_events,
                 }
 
             self.log.info("Database fully setup")

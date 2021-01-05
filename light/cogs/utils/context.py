@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Union, Optional
 import discord
 from discord import HTTPException, PartialEmoji
 from discord.ext import commands
+from discord.ext.commands.view import StringView
 
 if TYPE_CHECKING:
     from ... import Light
@@ -15,6 +16,7 @@ class Context(commands.Context):
     bot: Light
     author: Union[discord.User, discord.Member]
     channel: discord.TextChannel
+    view: StringView
 
     class emoji:
         online = PartialEmoji(name="online", id=659012420735467540)

@@ -4,130 +4,22 @@ import discord
 from discord.ext import commands, menus
 
 
-class ScrollingPaginatorBase(menus.MenuPages):
+class InfoPaginator(menus.MenuPages):
     """The base for all scrolling paginators"""
 
-    def __init__(self, *, source: list[str], timeout: float = 90):
-        super().__init__(source, timeout=timeout, delete_message_after=True)
-
-    @menus.button("⏹")
-    async def stop_pages(self, payload):
-        """Stops processing of reactions"""
-        self.stop()
-
-    @menus.button("ℹ", skip_if=super()._skip_double_triangle_buttons)
+    @menus.button("ℹ", skip_if=menus.MenuPages._skip_double_triangle_buttons, position=menus.Last(5))
     async def show_info(self, payload):
         """Shows this message"""
         embed = discord.Embed(title="Help with this message")
-        docs = [(button.emoji, button.action.__doc__) for button in self.buttons.values()]
-        docs = "\n".join(f"{button} - {doc}" for (button, doc) in docs)
+        docs: list[tuple[discord.PartialEmoji, str]] = [
+            (button.emoji, button.action.__doc__) for button in self.buttons.values()
+        ]
+        docs = "\n".join(f"{button} - {doc.title()}" for button, doc in docs)
         embed.description = f"What do the buttons do?:\n{docs}"
         return await self.message.edit(embed=embed)
 
-    async def get_page(self, *args, **kwargs):
-        raise NotImplemented
 
-
-class ScrollingPaginator(ScrollingPaginatorBase):
-    """For paginating text"""
-
-    def __init__(
-        self,
-        *,
-        title: str,
-        entries: list,
-        per_page: int = 10,
-        author: str = None,
-        author_icon_url: str = None,
-        footer: str = None,
-        footer_icon_url: str = None,
-        joiner: str = "\n",
-        timeout: int = 90,
-        thumbnail: str = None,
-        colour: discord.Colour = discord.Colour.blurple(),
-        file: discord.File = None,
-    ):
-
-        super().__init__(source=entries, timeout=timeout)
-        self.title = title
-        self.entries = entries
-        self.per_page = per_page
-        self.joiner = joiner
-        self.author = author
-        self.author_icon_url = author_icon_url
-        self.footer = footer
-        self.footer_icon_url = footer_icon_url
-        self.thumbnail = thumbnail
-        self.colour = colour
-        self.file = file
-
-        self.entries = list(self.chunk(entries))
-        self.page = 0
-
-    def check(self):
-        return len(self.entries) == 1
-
-    def chunk(self, entries):
-        for i in range(0, len(entries), self.per_page):
-            yield self.entries[i : i + self.per_page]
-
-    async def send_initial_message(self, ctx, channel):
-        page = self.entries[0]
-        if self.file is not None:
-            return await ctx.send(embed=await self.invoke(page), file=self.file)
-        else:
-            return await ctx.send(embed=await self.invoke(page))
-
-    async def next_page(self):
-        self.page += 1
-        try:
-            page = self.entries[self.page]
-        except IndexError:
-            return
-        else:
-            embed = await self.invoke(page)
-            await self.message.edit(embed=embed)
-
-    async def previous_page(self):
-        self.page -= 1
-        try:
-            page = self.entries[self.page]
-        except IndexError:
-            return
-        else:
-            embed = await self.invoke(page)
-            await self.message.edit(embed=embed)
-
-    async def first_page(self):
-        self.page = 0
-        page = self.entries[self.page]
-        embed = await self.invoke(page)
-        await self.message.edit(embed=embed)
-
-    async def final_page(self):
-        self.page = len(self.entries) - 1
-        page = self.entries[self.page]
-        embed = await self.invoke(page)
-        await self.message.edit(embed=embed)
-
-    async def invoke(self, page):
-        embed = discord.Embed(title=self.title, description=self.joiner.join(page), colour=self.colour)
-        if self.author and self.author_icon_url:
-            embed.set_author(name=self.author, icon_url=self.author_icon_url)
-        elif self.author:
-            embed.set_author(name=self.author)
-        if self.footer and self.footer_icon_url:
-            embed.set_footer(text=self.footer, icon_url=self.footer_icon_url)
-        elif self.footer:
-            embed.set_footer(text=self.footer)
-        if self.thumbnail:
-            embed.set_thumbnail(url=self.thumbnail)
-        if self.file:
-            embed.set_image(url=f"attachment://{self.file.filename}")
-        return embed
-
-
-class TextPaginator(ScrollingPaginator):
+class TextPaginator(InfoPaginator):
     """For paginating code blocks in an embed"""
 
     def __init__(self, *, text, title, python=True, **kwargs):
