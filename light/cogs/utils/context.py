@@ -16,6 +16,7 @@ class Context(commands.Context):
     bot: Light
     author: Union[discord.User, discord.Member]
     channel: discord.TextChannel
+    guild: discord.Guild
     view: StringView
 
     class emoji:
@@ -28,6 +29,7 @@ class Context(commands.Context):
         cross = PartialEmoji(name="cross", id=688829441123942416)
 
         discord = PartialEmoji(name="discord", id=626486432793493540)
+        steam = PartialEmoji(name="steam", id=622621553800249364)
         dpy = PartialEmoji(name="dpy", id=622794044547792926)
         python = PartialEmoji(name="python", id=622621989474926622)
         postgres = PartialEmoji(name="postgres", id=689210432031817750)
@@ -64,4 +66,4 @@ class Context(commands.Context):
             except discord.HTTPException:
                 pass
         else:
-            await message.delete()
+            await message.delete(silent=True)  # noqa

@@ -94,7 +94,7 @@ class AnnotatedTableMeta(FetchableMeta):
 
     def __getattribute__(cls, item: str) -> Any:
         if item == "__name__":
-            return cls.__qualname__
+            return super().__getattribute__("__qualname__")
 
         attr = super().__getattribute__(item)
         if inspect.iscoroutinefunction(attr):
@@ -192,5 +192,3 @@ class Config(Table):
     guild_id: Annotated[int, SQLType.BigInt(), Column(primary_key=True)]
     blacklisted: bool
     prefixes: list[str]
-    logging_channel: Annotated[int, SQLType.BigInt()]
-    logged_events: list[str]

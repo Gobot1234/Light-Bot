@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import discord
 from discord.ext import commands, tasks
 
+from . import Cog
 from .utils.context import Context
 from .utils.db import Config
 from .utils.formats import format_error
@@ -14,12 +15,8 @@ if TYPE_CHECKING:
     from .. import Light
 
 
-class Listeners(commands.Cog):
+class Listeners(Cog):
     """Listeners for the bot"""
-
-    def __init__(self, bot: Light):
-        self.bot = bot
-        self.status.start()
 
     async def cog_check(self, ctx):
         return False
@@ -39,6 +36,8 @@ class Listeners(commands.Cog):
     @status.before_loop
     async def wait_for_ready_status(self):
         await self.bot.wait_until_ready()
+
+    status.start()
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild: discord.Guild) -> None:

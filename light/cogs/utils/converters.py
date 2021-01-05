@@ -16,7 +16,7 @@ class DatetimeConverter(commands.Converter):
     def __init__(self, *args: Any, **kwargs: Any):
         self.date_parser = dateparser.DateDataParser(*args, **kwargs)
 
-    def convert(self, ctx: Context, argument: str) -> datetime:
+    async def convert(self, ctx: Context, argument: str) -> datetime:
         if date := self.date_parser.get_date_data(argument)["date_obj"]:
             return date
         raise commands.BadArgument("I'm sorry I couldn't convert that to a time.")

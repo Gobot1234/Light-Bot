@@ -83,13 +83,7 @@ class Light(commands.Bot):
         self.load_extension("jishaku")
 
         try:
-            self.db: Pool = await create_pool(
-                # dsn=config.DATABASE_URL,
-                dsn=None,
-                database="database",
-                user="admin",
-                password="password",
-            )
+            self.db = await create_pool(dsn=config.DATABASE_URL, command_timeout=10)
         except Exception as exc:
             self.log.error(f"Could not set up PostgreSQL. Exiting...", exc_info=exc)
             return await asyncio.sleep(3600)
@@ -126,9 +120,9 @@ Message: {ctx.message.clean_content!r}"""
         if not self.first_ready:
             return
 
-        for guild in self.guilds_to_leave:
-            if guild in self.guilds:
-                await self.get_guild(guild).leave()
+        for guild_id in self.guilds_to_leave:
+            if guild := self._connection._get_guild(guild_id):
+                await guild.leave()
 
         self.owner = (await self.application_info()).owner
         print(
