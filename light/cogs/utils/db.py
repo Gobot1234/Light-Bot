@@ -1,60 +1,46 @@
 from __future__ import annotations
 
-import functools
-import inspect
-from types import SimpleNamespace
 from typing import (
     TYPE_CHECKING,
     Annotated,
     Any,
     Callable,
-    Coroutine,
     Iterable,
     Optional,
-    Protocol,
+    Union,
     TypeVar,
     get_args,
     get_origin,
-    runtime_checkable,
 )
 
 from asyncpg import Connection, Record
-from donphan import Column, MaybeAcquire, Table
+from donphan import Column, MaybeAcquire, Table as DonphanTable, SQLType
 from donphan.abc import FetchableMeta
-from donphan.sqltype import SQLType, _defaults as DEFAULTS
 
-globals().update(**{cls.__name__: cls for cls in DEFAULTS})
 
 T = TypeVar("T", bound="Table")
 
+if TYPE_CHECKING:
+    from datetime import datetime, date, timedelta
+    from decimal import Decimal
+    from ipaddress import IPv4Address, IPv4Network, IPv6Address, IPv6Network
+    from uuid import UUID
 
-def wrap_coro(func: Callable[..., Coroutine]) -> Callable[..., Coroutine]:
-    @functools.wraps(func)
-    async def wrapped(*args: Any, **kwargs: Any) -> Any:
-        """Wrapper around returned async functions which makes asyncpg.Records types.SimpleNamespaces"""
-        ret = await func(*args, **kwargs)
-        if isinstance(ret, Record):
-            return SimpleNamespace(**dict(ret), original=ret)
-        if isinstance(ret, Iterable):
-            new_return = []
-            for element in ret:
-                if isinstance(element, Record):
-                    element = SimpleNamespace(**dict(element), original=element)
-
-                new_return.append(element)
-            return new_return
-
-        return ret
-
-    return wrapped
-
-
-@runtime_checkable
-class AnnotatedAlias(Protocol):
-    """Protocol version of typing._AnnotatedAlias so we don't get NameErrors from linters."""
-
-    __origin__: type
-    __metadata__: tuple[type, ...]
+    SQLType.Integer = SQLType.SmallInt = SQLType.BigInt = SQLType.Serial = int
+    SQLType.Float = SQLType.DoublePrecision = float
+    SQLType.Numeric = Decimal
+    SQLType.Money = SQLType.Character = SQLType.Text = str
+    SQLType.CharacterVarying = Union[str, Callable[[int], str]]
+    SQLType.Bytea = bytes
+    SQLType.Timestamp = datetime
+    SQLType.Date = date
+    SQLType.Interval = timedelta
+    SQLType.Boolean = bool
+    SQLType.CIDR = Union[IPv4Network, IPv6Network]
+    SQLType.Inet = Union[IPv4Address, IPv6Address]
+    SQLType.MACAddr = str
+    SQLType.UUID = UUID
+    SQLType.JSON = SQLType.JSONB = dict
 
 
 class AnnotatedTableMeta(FetchableMeta):
@@ -75,113 +61,100 @@ class AnnotatedTableMeta(FetchableMeta):
             sql_type = None
             if isinstance(type, str):
                 type = eval(type)
-                if isinstance(type, AnnotatedAlias):
+                if get_origin(type) is Annotated:
                     attrs[name] = type.__metadata__[0]
                     sql_type = type.__origin__
             annotations[name] = sql_type if sql_type is not None else type
 
-            if (origin := get_origin(type)) and issubclass(origin or object, list):
+            if (origin := get_origin(type)) and issubclass(origin or object, Iterable):
                 annotations[name] = [*get_args(type)]
 
         return super().__new__(mcs, name, bases, attrs)
 
     def __getattribute__(cls, item: str) -> Any:
-        if item == "__name__":
-            return super().__getattribute__("__qualname__")
-
-        attr = super().__getattribute__(item)
-        if inspect.iscoroutinefunction(attr):
-            return wrap_coro(attr)
-
-        return attr
+        return super().__getattribute__("__qualname__" if item == "__name__" else item)
 
 
-class Table(Table, metaclass=AnnotatedTableMeta):
+class Table(DonphanTable, metaclass=AnnotatedTableMeta):
+    """Allows for dot access to field names, main reason for this is type checking.
+
+    TypedDicts aren't an option here as they cause base class issues.
+    """
+
+    def __init__(self, *, record: Record, **kwargs: Any):
+        for name, attr in kwargs.items():
+            setattr(self, name, attr)
+        self.record = record
+
+    def __repr__(self) -> str:
+        return (
+            f"<{self.__class__.__name__} {' '.join(f'{name}={getattr(self, name)}' for name in self.__annotations__)}>"
+        )
+
     @classmethod
     async def create_tables(cls, connection: Connection):
         async with MaybeAcquire(connection=connection) as connection:
             for table in cls.__subclasses__():
                 await table.create(connection=connection, drop_if_exists=False)
 
-    def __getattribute__(self, item: str) -> Any:
-        attr = super().__getattribute__(item)
-        if inspect.iscoroutinefunction(attr):
-            return wrap_coro(attr)
+    @classmethod
+    async def fetch(cls: type[T], *, order_by: Optional[str] = None, limit: Optional[int] = None, **kwargs) -> list[T]:
+        return [
+            cls(**dict(record), record=record)
+            for record in await super().fetch(order_by=order_by, limit=limit, **kwargs)
+        ]
 
-        return attr
+    @classmethod
+    async def fetch_all(cls: type[T], *, order_by: Optional[str] = None, limit: Optional[int] = None) -> list[T]:
+        return [cls(**dict(record), record=record) for record in await super().fetchall(order_by=order_by, limit=limit)]
 
-    if TYPE_CHECKING:
-        # stubs to support above __getattribute__
-        @classmethod
-        async def fetch(
-            cls: type[T],
-            *,
-            connection: Optional[Connection] = None,
-            order_by: Optional[str] = None,
-            limit: Optional[int] = None,
+    @classmethod
+    async def fetch_row(cls: type[T], *, order_by: Optional[str] = None, **kwargs: Any) -> Optional[T]:
+        if (record := await super().fetchrow(order_by=order_by, **kwargs)) is not None:
+            return cls(**dict(record), record=record)
+
+    @classmethod
+    async def fetch_where(
+        cls: type[T], where: str, *values: Any, order_by: Optional[str] = None, limit: Optional[int] = None
+    ) -> list[T]:
+        return [
+            cls(**dict(record), record=record)
+            for record in await super().fetch_where(where, *values, order_by=order_by, limit=limit)
+        ]
+
+    @classmethod
+    async def fetch_row_where(cls: type[T], where: str, *values: Any, order_by: Optional[str] = None) -> list[T]:
+        return [
+            cls(**dict(record), record=record)
+            for record in await super().fetchrow_where(where, *values, order_by=order_by)
+        ]
+
+    @classmethod
+    async def insert(
+        cls: type[T],
+        *,
+        ignore_on_conflict: bool = False,
+        update_on_conflict: Optional[Column] = None,
+        returning: Optional[Iterable[Column]] = None,
+        **kwargs: Any,
+    ) -> Optional[T]:
+        record = await super().insert(
+            ignore_on_conflict=ignore_on_conflict,
+            update_on_conflict=update_on_conflict,
+            returning=returning,
             **kwargs,
-        ) -> list[T]:
-            ...
+        )
+        if record is not None:
+            return cls(**dict(record), record=record)
 
-        @classmethod
-        async def fetchall(
-            cls: type[T],
-            *,
-            connection: Optional[Connection] = None,
-            order_by: Optional[str] = None,
-            limit: Optional[int] = None,
-        ) -> list[T]:
-            ...
+    async def update_record(self, **kwargs: Any) -> None:
+        await super().update_record(self.record, **kwargs)
 
-        @classmethod
-        async def fetchrow(
-            cls: type[T], *, connection: Optional[Connection] = None, order_by: Optional[str] = None, **kwargs: Any
-        ) -> Optional[T]:
-            ...
-
-        @classmethod
-        async def fetch_where(
-            cls: type[T],
-            where: str,
-            *values: Any,
-            connection: Optional[Connection] = None,
-            order_by: Optional[str] = None,
-            limit: Optional[int] = None,
-        ) -> list[T]:
-            ...
-
-        @classmethod
-        async def fetchrow_where(
-            cls: type[T],
-            where: str,
-            *values: Any,
-            connection: Optional[Connection] = None,
-            order_by: Optional[str] = None,
-        ) -> list[T]:
-            ...
-
-        @classmethod
-        async def insert(
-            cls: type[T],
-            *,
-            connection: Optional[Connection] = None,
-            ignore_on_conflict: bool = False,
-            update_on_conflict: Optional[Column] = None,
-            returning: Optional[Iterable[Column]] = None,
-            **kwargs,
-        ) -> Optional[T]:
-            ...
-
-        @classmethod
-        async def update_record(cls, record: T, *, connection: Connection = None, **kwargs: Any) -> None:
-            ...
-
-        @classmethod
-        async def delete_record(cls, record: T, *, connection: Connection = None):
-            ...
+    async def delete_record(self) -> None:
+        await super().delete_record(self.record)
 
 
 class Config(Table):
     guild_id: Annotated[SQLType.BigInt, Column(primary_key=True)]
     blacklisted: bool
-    prefixes: list[str]
+    prefixes: set[str]

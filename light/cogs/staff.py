@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING
 
 import discord
 from discord.ext import commands
-from donphan import Column, SQLType
 
 from . import Cog
-from .utils.db import Config, Table
+from .utils.db import Config
 
 if TYPE_CHECKING:
     from .utils.context import Context
@@ -34,9 +32,7 @@ class Staff(Cog):
     async def prefix(self, ctx):
         """View your current prefixes by just typing {prefix}prefix"""
         if ctx.invoked_subcommand is None:
-            prefixes = await commands.clean_content().convert(
-                ctx, argument="\n".join(self.bot.config_cache[ctx.guild.id]["prefixes"])
-            )
+            prefixes = "\n".join(self.bot.config_cache[ctx.guild.id].prefixes)
             embed = discord.Embed(
                 title=f"Your current prefixes for {ctx.guild} are",
                 description=f"{prefixes}\n& @{self.bot.user.name}",
@@ -52,29 +48,29 @@ class Staff(Cog):
         if prefix.startswith(f"<@{ctx.me.id}>") or prefix.startswith(f"<@!{ctx.me.id}>"):
             await ctx.send("I'm sorry but you can't use that prefix")
         else:
-            prefixes = self.bot.config_cache[ctx.guild.id]["prefixes"]
+            prefixes = self.bot.config_cache[ctx.guild.id].prefixes
             if len(prefixes) >= 10:
                 return await ctx.send("You can't add anymore prefixes")
             if prefix in prefixes:
                 return await ctx.send("That prefix is already in use")
-            prefixes.append(prefix)
-            await Config.update_where(prefixes=prefixes, guild_id=ctx.guild.id)
-            await ctx.send(f"Successfully added `{prefix}` to your prefixes")
+            prefixes.add(prefix)
+            await Config.insert(prefixes=prefixes, guild_id=ctx.guild.id)
+            await ctx.send(f"Successfully added {prefix} to your prefixes")
 
     @prefix.command(name="remove")
     async def prefix_remove(self, ctx, prefix: str):
         """Remove a prefix from your server's prefixes"""
-        if prefix.startswith(self.bot.user.mention) or prefix.startswith(f"<@!{self.bot.user.id}>"):
+        if prefix.startswith((self.bot.user.mention, f"<@!{self.bot.user.id}>")):
             return await ctx.send("I'm sorry but you can't use that prefix")
 
-        prefixes = self.bot.config_cache[ctx.guild.id]["prefixes"]
+        prefixes = self.bot.config_cache[ctx.guild.id].prefixes
         try:
             prefixes.remove(prefix)
         except ValueError:
             await ctx.send(f"{prefix} isn't in your list of prefixes")
         else:
-            await Config.update_where(prefixes=prefixes, guild_id=ctx.guild.id)
-            await ctx.send(f"Successfully removed `{prefix}` from prefixes")
+            await Config.update_where(prefixes=list(prefixes), guild_id=ctx.guild.id)
+            await ctx.send(f"Successfully removed {prefix} from prefixes")
 
 
 def setup(bot):

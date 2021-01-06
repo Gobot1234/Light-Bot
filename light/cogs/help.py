@@ -41,7 +41,7 @@ class EmbedHelpCommand(commands.HelpCommand):
                 entries.append(embed)
         source = menus.ListPageSource(entries, per_page=1)
         source.format_page = lambda menu, page: page
-        await InfoPaginator(source).start(self.context)
+        await InfoPaginator(source, delete_message_after=True).start(self.context)
 
     async def send_cog_help(self, cog):
         embed = discord.Embed(title=f"{cog.qualified_name} Commands", colour=self.COLOUR)
@@ -149,7 +149,7 @@ class Help(commands.Cog):
 
             embed.add_field(
                 name=f"Roles ({len(user.roles) - 1})",
-                value=human_join([role.mention for role in reversed(user.roles[1:])], final="and",)
+                value=human_join([role.mention for role in reversed(user.roles[1:])])
                 if user.roles[1:]
                 else "None",
             )

@@ -12,7 +12,7 @@ def format_error(error: Exception, *, strip: bool = False) -> str:
     return formatted
 
 
-def human_join(seq: Sequence[str], delimiter: str = ", ", final: str = "or") -> str:
+def human_join(seq: Sequence[str], delimiter: str = ", ", final: str = "and") -> str:
     size = len(seq)
     if size == 0:
         return ""

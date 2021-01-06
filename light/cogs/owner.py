@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 class Owner(Cog, command_attrs={"hidden": True}):
     """These commands can only be used by the owner of the bot, or the guild owner"""
 
-    async def cog_check(self, ctx):
+    async def cog_check(self, ctx: Context):
         if await ctx.bot.is_owner(ctx.author):
             return True
         elif ctx.guild:
