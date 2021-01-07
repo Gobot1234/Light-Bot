@@ -6,6 +6,7 @@ from typing import (
     Any,
     Callable,
     Iterable,
+    Literal,
     Optional,
     Union,
     TypeVar,
@@ -105,11 +106,11 @@ class Table(DonphanTable, metaclass=AnnotatedTableMeta):
         ]
 
     @classmethod
-    async def fetch_all(cls: type[T], *, order_by: Optional[str] = None, limit: Optional[int] = None) -> list[T]:
+    async def fetchall(cls: type[T], *, order_by: Optional[str] = None, limit: Optional[int] = None) -> list[T]:
         return [cls(**dict(record), record=record) for record in await super().fetchall(order_by=order_by, limit=limit)]
 
     @classmethod
-    async def fetch_row(cls: type[T], *, order_by: Optional[str] = None, **kwargs: Any) -> Optional[T]:
+    async def fetchrow(cls: type[T], *, order_by: Optional[str] = None, **kwargs: Any) -> Optional[T]:
         if (record := await super().fetchrow(order_by=order_by, **kwargs)) is not None:
             return cls(**dict(record), record=record)
 
@@ -123,7 +124,7 @@ class Table(DonphanTable, metaclass=AnnotatedTableMeta):
         ]
 
     @classmethod
-    async def fetch_row_where(cls: type[T], where: str, *values: Any, order_by: Optional[str] = None) -> list[T]:
+    async def fetchrow_where(cls: type[T], where: str, *values: Any, order_by: Optional[str] = None) -> list[T]:
         return [
             cls(**dict(record), record=record)
             for record in await super().fetchrow_where(where, *values, order_by=order_by)
@@ -135,9 +136,11 @@ class Table(DonphanTable, metaclass=AnnotatedTableMeta):
         *,
         ignore_on_conflict: bool = False,
         update_on_conflict: Optional[Column] = None,
-        returning: Optional[Iterable[Column]] = None,
+        returning: Optional[Union[Literal["*"], Iterable[Column]]] = None,
         **kwargs: Any,
     ) -> Optional[T]:
+        if returning == "*":  # short hand for return all
+            returning = (getattr(cls, name) for name in cls.__annotations__)
         record = await super().insert(
             ignore_on_conflict=ignore_on_conflict,
             update_on_conflict=update_on_conflict,
@@ -151,7 +154,8 @@ class Table(DonphanTable, metaclass=AnnotatedTableMeta):
         await super().update_record(self.record, **kwargs)
 
     async def delete_record(self) -> None:
-        await super().delete_record(self.record)
+        kwargs = {key: value for key, value in self.record.items() if key in self.__annotations__}
+        await super().delete(**kwargs)  # just using delete_record raises an AttributeError if you remove columns
 
 
 class Config(Table):

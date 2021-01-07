@@ -90,7 +90,7 @@ class Light(commands.Bot):
             async with self.db.acquire() as connection:
                 await Table.create_tables(connection)
 
-            for guild in await Config.fetch_all():
+            for guild in await Config.fetchall():
                 if guild.blacklisted:
                     self.guilds_to_leave.append(guild.guild_id)
                     continue

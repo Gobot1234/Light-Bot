@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import importlib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Union
 
+import discord
 from discord.ext import commands
 
 from . import Cog
@@ -11,10 +12,10 @@ from .utils.context import Context
 from .utils.formats import format_error
 
 if TYPE_CHECKING:
-    from .. import Light
+    from .. import Light, Config
 
 
-class Owner(Cog, command_attrs={"hidden": True}):
+class Owner(Cog, command_attrs=dict(hidden=True)):
     """These commands can only be used by the owner of the bot, or the guild owner"""
 
     async def cog_check(self, ctx: Context):
@@ -35,7 +36,7 @@ class Owner(Cog, command_attrs={"hidden": True}):
     @commands.command(aliases=["ru"])
     @commands.is_owner()
     async def reload_util(self, ctx: Context, name: str) -> None:
-        """Reload a Utils module"""
+        """Reload a utils module"""
         try:
             module_name = importlib.import_module(f"light.cogs.utils.{name}")
             importlib.reload(module_name)
@@ -46,6 +47,13 @@ class Owner(Cog, command_attrs={"hidden": True}):
         else:
             await ctx.send(f"Reloaded module **{name}**")
 
+    @commands.command()
+    async def blacklist(self, ctx: Context, guild: Union[discord.Guild, discord.Object]):
+        await Config.insert(blacklisted=True, guild_id=guild.id, update_on_conflict=Config.blacklisted)
+        await ctx.send(f"Blacklisted {guild!r}")
+        if hasattr(guild, "leave"):
+            await guild.leave()
 
-def setup(bot):
+
+def setup(bot: Light) -> None:
     bot.add_cog(Owner(bot))

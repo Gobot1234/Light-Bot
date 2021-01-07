@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import difflib
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 import discord
 from discord.ext import commands, menus
@@ -43,7 +43,7 @@ class EmbedHelpCommand(commands.HelpCommand):
         source.format_page = lambda menu, page: page
         await InfoPaginator(source, delete_message_after=True).start(self.context)
 
-    async def send_cog_help(self, cog):
+    async def send_cog_help(self, cog: commands.Cog):
         embed = discord.Embed(title=f"{cog.qualified_name} Commands", colour=self.COLOUR)
         if cog.description:
             embed.description = cog.description
@@ -72,7 +72,7 @@ class EmbedHelpCommand(commands.HelpCommand):
 
     send_group_help = send_command_help
 
-    async def send_error_message(self, error):
+    async def send_error_message(self, error: Exception):
         ...
 
     async def command_not_found(self, string: str) -> None:
@@ -106,7 +106,7 @@ class Help(commands.Cog):
         self.bot.help_command = self._original_help_command
 
     @commands.command()
-    async def avatar(self, ctx, member: discord.Member = None):
+    async def avatar(self, ctx, member: Optional[discord.Member] = None):
         """Get a member's avatar with links to download/view in higher quality"""
         member = member or ctx.author
         embed = discord.Embed(
@@ -163,5 +163,5 @@ class Help(commands.Cog):
         await ctx.send(embed=embed)
 
 
-def setup(bot):
+def setup(bot: Light) -> None:
     bot.add_cog(Help(bot))
