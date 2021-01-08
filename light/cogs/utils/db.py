@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 from typing import (
-    TYPE_CHECKING,
     Annotated,
     Any,
-    Callable,
     Iterable,
     Literal,
     Optional,
-    Union,
     TypeVar,
+    Union,
     get_args,
     get_origin,
 )
@@ -17,7 +15,6 @@ from typing import (
 from asyncpg import Connection, Record
 from donphan import Column, MaybeAcquire, Table as DonphanTable, SQLType
 from donphan.abc import FetchableMeta
-
 
 T = TypeVar("T", bound="Table")
 
@@ -49,11 +46,11 @@ class AnnotatedTableMeta(FetchableMeta):
 
     Example
     -------
-    ```py
-    class Entry(Table):
-        id: int
-        created_at: Annotated[datetime, Column(default='NOW()')]
-    ```
+    .. code-block:: python3
+
+        class Entry(Table):
+            id: int
+            created_at: Annotated[datetime, Column(default='NOW()')]
     """
 
     def __new__(mcs, name: str, bases: tuple[type, ...], attrs: dict[str, Any], **kwargs: Any) -> type[Table]:
@@ -70,7 +67,7 @@ class AnnotatedTableMeta(FetchableMeta):
             if (origin := get_origin(type)) and issubclass(origin or object, Iterable):
                 annotations[name] = [*get_args(type)]
 
-        return super().__new__(mcs, name, bases, attrs)
+        return super().__new__(mcs, name, bases, attrs, **kwargs)
 
     def __getattribute__(cls, item: str) -> Any:
         return super().__getattribute__("__qualname__" if item == "__name__" else item)
@@ -93,7 +90,7 @@ class Table(DonphanTable, metaclass=AnnotatedTableMeta):
         )
 
     @classmethod
-    async def create_tables(cls, connection: Connection):
+    async def create_tables(cls, connection: Connection) -> None:
         async with MaybeAcquire(connection=connection) as connection:
             for table in cls.__subclasses__():
                 await table.create(connection=connection, drop_if_exists=False)

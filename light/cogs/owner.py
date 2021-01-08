@@ -12,7 +12,7 @@ from .utils.context import Context
 from .utils.formats import format_error
 
 if TYPE_CHECKING:
-    from .. import Light, Config
+    from .. import Config, Light
 
 
 class Owner(Cog, command_attrs=dict(hidden=True)):
@@ -53,6 +53,10 @@ class Owner(Cog, command_attrs=dict(hidden=True)):
         await ctx.send(f"Blacklisted {guild!r}")
         if hasattr(guild, "leave"):
             await guild.leave()
+
+    @commands.command()
+    async def my_cool_command(self, ctx: Context, args):
+        pass
 
 
 def setup(bot: Light) -> None:

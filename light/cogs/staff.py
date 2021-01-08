@@ -1,12 +1,14 @@
+# -*- coding: utf-8 -*-
+
 from __future__ import annotations
 
 import discord
 from discord.ext import commands
 
 from . import Cog
+from .utils.context import Context
 from .utils.db import Config
 from .utils.formats import human_join
-from .utils.context import Context
 
 
 class Staff(Cog):
@@ -16,13 +18,11 @@ class Staff(Cog):
     @commands.guild_only()
     @commands.has_permissions(manage_guild=True)
     async def prefix(self, ctx: Context):
-        """View your current prefixes by just typing {prefix}prefix"""
+        """View your current prefixes by just typing {clean_prefix}prefix"""
         if ctx.invoked_subcommand is None:
             embed = discord.Embed(
                 title=f"Your current prefixes are",
-                description=human_join(
-                    tuple(self.bot.config_cache[ctx.guild.id].prefixes) + (self.bot.user.mention,),
-                ),
+                description=human_join(tuple(self.bot.config_cache[ctx.guild.id].prefixes) + (self.bot.user.mention,),),
                 colour=discord.Colour.blurple(),
             )
 

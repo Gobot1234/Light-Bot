@@ -1,6 +1,9 @@
-donphan
-steamio
 discord.py
+steamio
+donphan
 discord-ext-menus
 discord-ext-alternatives
+discord-ext-ipc
 humanize
+matplotlib
+jishaku

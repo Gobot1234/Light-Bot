@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -18,7 +19,7 @@ from steam.ext.commands.bot import resolve_path
 
 from . import config
 from .cogs.utils.context import Context
-from .cogs.utils.db import Table, Config
+from .cogs.utils.db import Config, Table
 from .cogs.utils.formats import format_error, human_join
 
 
@@ -53,11 +54,11 @@ class Light(commands.Bot):
             if f.is_file() and f.suffix == ".py" and not f.name.startswith("_")
         ]
 
-    def setup_logging(self):
+    def setup_logging(self) -> None:
         format_string = "%(asctime)s : %(name)s - %(levelname)s | %(message)s"
         log_format = logging.Formatter(format_string)
 
-        logs = Path("logs", f"out--{datetime.now().strftime('%d-%m-%Y')}.log")
+        logs = Path("logs", f"{datetime.now().strftime('%d-%m-%Y')}.log")
         logs.parent.mkdir(exist_ok=True)
         file_handler = logging.FileHandler(filename=logs, encoding="utf-8", mode="w")
         file_handler.setFormatter(log_format)
@@ -69,10 +70,10 @@ class Light(commands.Bot):
         logging.getLogger("discord").setLevel(logging.WARNING)
         logging.getLogger("steam").setLevel(logging.WARNING)
         logging.getLogger("matplotlib").setLevel(logging.WARNING)
-        self.log = logging.getLogger("Light")
+        self.log = logging.getLogger("light")
         self.log.info("Finished setting up logging")
 
-    async def start(self):
+    async def start(self) -> None:
         self.setup_logging()
         self.log.info("Setting up DB")
 
@@ -84,8 +85,9 @@ class Light(commands.Bot):
         try:
             self.db = await create_pool(dsn=config.DATABASE_URL, command_timeout=10)
         except Exception as exc:
+            traceback.print_exc()
             self.log.error(f"Could not set up PostgreSQL. Exiting...", exc_info=exc)
-            return await asyncio.sleep(3600)
+            return await asyncio.sleep(600)
         else:
             async with self.db.acquire() as connection:
                 await Table.create_tables(connection)
@@ -102,7 +104,9 @@ class Light(commands.Bot):
         self.session = aiohttp.ClientSession()
         print(f"Extensions to be loaded are {human_join([str(f) for f in self.initial_extensions])}")
 
-        # self.loop.create_task(self.client.start())
+        self.loop.create_task(
+            self.client.start(config.STEAM_USERNAME, config.STEAM_PASSWORD, shared_secret=config.STEAM_SHARED_SECRET)
+        )
         await super().start(config.TOKEN)
 
     async def on_command(self, ctx: Context) -> None:
@@ -123,11 +127,12 @@ Message: {ctx.message.clean_content!r}
             if guild := self._connection._get_guild(guild_id):  # noqa
                 await guild.leave()
 
+        await self.client.wait_until_ready()
         print(f"Logged in as: {self.user} - {self.user.id} -- Version: {discord.__version__} of discord.py")
         self.log.info(f"Logged in as: {self.user} - {self.user.id} -- Version: {discord.__version__} of discord.py")
         self.first_ready = False
 
-    async def close(self):
+    async def close(self) -> None:
         try:
             self.log.info("About to close the bot")
             await self.db.close()

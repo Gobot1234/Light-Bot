@@ -1,8 +1,12 @@
+# -*- coding: utf-8 -*-
+
+from __future__ import annotations
+
 import asyncio
 import re
 from datetime import datetime, timedelta
 from io import BytesIO
-from typing import NamedTuple, Union
+from typing import TYPE_CHECKING, NamedTuple, Union
 
 import discord
 from discord.ext import commands
@@ -14,6 +18,9 @@ from matplotlib.figure import figaspect
 from . import Cog
 from .utils.context import Context
 from .utils.converters import SteamUser
+
+if TYPE_CHECKING:
+    from .. import Light
 
 
 class ServiceInfo:
@@ -40,9 +47,17 @@ class SteamStats(NamedTuple):
 
 
 class Steam(Cog):
-    """Need help? Try these with <@630008145162272778> help <command>"""
+    """The category for all steam related commands.
 
-    @commands.command()
+    Use {bot_mention}help steam for more info on these.
+    """
+
+    @commands.group()
+    async def steam(self, ctx: Context) -> None:
+        if ctx.invoked_subcommand is None:
+            await ctx.send_help(ctx.command)
+
+    @steam.command(name="user")
     async def steam_user(self, ctx: Context, user: SteamUser):
         """Show some basic info on a steam user"""
         friends, games = await asyncio.gather(user.friends(), user.games())
@@ -167,7 +182,8 @@ class Steam(Cog):
             ],
             game_info=[
                 f"{emoji.tick if game.status >= 80 else emoji.cross} {game.name} - "
-                f"{'Normal' if game.status >= 80 else game.status}" for game in games
+                f"{'Normal' if game.status >= 80 else game.status}"
+                for game in games
             ],
             service_info=[
                 f"{emoji.tick if service.status >= 80 else emoji.cross} {service.name} - "
@@ -178,8 +194,8 @@ class Steam(Cog):
             is_stable=data["online"] >= 70,
         )
 
-    @commands.command(aliases=["steamstats", "steamstatus", "ss"])
-    @commands.cooldown(1, 30, commands.BucketType.user)
+    @steam.command(name="stats", aliases=["status", "s"])
+    @commands.cooldown(1, 30, commands.BucketType.user)  # probably should add max_concurrency
     async def steam_stats(self, ctx: Context):
         """Get Steam's current status using https://steamstat.us."""
         async with ctx.typing():
@@ -188,7 +204,7 @@ class Steam(Cog):
                 return await ctx.send("Could not fetch Steam stats. Try again later.")
 
             data = await r.json()
-            graph = await self.gen_steam_stats_graph(data)
+            graph: discord.File = await self.gen_steam_stats_graph(data)  # noqa
             steam_stats = self.map_steam_stats(data)
 
             services = "\n".join(steam_stats.service_info)
@@ -196,7 +212,7 @@ class Steam(Cog):
             embed = discord.Embed(colour=ctx.colour.steam, description=f"{services}\n\n{gamers}")
             embed.set_author(
                 name=(
-                    f"Steam Stats: {'Fully operational' if steam_stats.is_stable else 'Potentially unstable'} "
+                    f"Steam Stats: {'fully operational' if steam_stats.is_stable else 'potentially unstable'} "
                     f"{'👍' if steam_stats.is_stable else '👎'}"
                 ),
                 icon_url=ctx.emoji.steam.url,
@@ -204,12 +220,12 @@ class Steam(Cog):
 
             first_column = steam_stats.server_info[: len(steam_stats.server_info) // 2]
             second_column = steam_stats.server_info[len(steam_stats.server_info) // 2 :]
-            embed.add_field(name="CMs Servers:", value="\n".join(first_column))
+            embed.add_field(name="CM Servers:", value="\n".join(first_column))
             embed.add_field(name="\u200b", value="\n".join(second_column))
             embed.add_field(name="Games:", value="\n".join(steam_stats.game_info))
             embed.set_image(url="attachment://graph.png")
             await ctx.send(embed=embed, file=graph)
 
 
-def setup(bot):
+def setup(bot: Light) -> None:
     bot.add_cog(Steam(bot))
