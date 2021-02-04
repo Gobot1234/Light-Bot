@@ -18,8 +18,9 @@ from donphan import create_pool
 from steam.ext.commands.bot import resolve_path
 
 from . import config
+from .cogs.utils import logger
 from .cogs.utils.context import Context
-from .cogs.utils.db import Config, Table
+from .cogs.utils.db import Config, DotRecord, Table
 from .cogs.utils.formats import format_error, human_join
 
 
@@ -42,7 +43,7 @@ class Light(commands.Bot):
         self.first_ready = True
         self.guilds_to_leave: list[int] = []
 
-        self.log: Optional[logging.Logger] = None
+        self.log: Optional[logger.WebhookLogger] = None
         self.db: Optional[Pool] = None
         self.config_cache: dict[int, Config] = {}
         self.session: Optional[aiohttp.ClientSession] = None
@@ -54,36 +55,26 @@ class Light(commands.Bot):
             if f.is_file() and f.suffix == ".py" and not f.name.startswith("_")
         ]
 
-    def setup_logging(self) -> None:
-        format_string = "%(asctime)s : %(name)s - %(levelname)s | %(message)s"
-        log_format = logging.Formatter(format_string)
-
-        logs = Path("logs", f"{datetime.now().strftime('%d-%m-%Y')}.log")
-        logs.parent.mkdir(exist_ok=True)
-        file_handler = logging.FileHandler(filename=logs, encoding="utf-8", mode="w")
-        file_handler.setFormatter(log_format)
-
-        root_log = logging.getLogger()
-        root_log.setLevel(logging.DEBUG)
-        root_log.addHandler(file_handler)
+    async def setup_logging(self) -> None:
+        self.webhook_adapter = adapter = discord.AsyncWebhookAdapter(self.session)
+        self.webhook = discord.Webhook.from_url(config.WEBHOOK_URL, adapter=adapter)
 
         logging.getLogger("discord").setLevel(logging.WARNING)
         logging.getLogger("steam").setLevel(logging.WARNING)
         logging.getLogger("matplotlib").setLevel(logging.WARNING)
-        self.log = logging.getLogger("light")
+        self.log = await logger.WebhookLogger.from_bot(self)
         self.log.info("Finished setting up logging")
 
     async def start(self) -> None:
-        self.setup_logging()
-        self.log.info("Setting up DB")
-
+        self.session = aiohttp.ClientSession()
+        await self.setup_logging()
         for extension in self.initial_extensions:
             self.load_extension(resolve_path(extension))
 
         self.load_extension("jishaku")
 
         try:
-            self.db = await create_pool(dsn=config.DATABASE_URL, command_timeout=10)
+            self.db = await create_pool(dsn=config.DATABASE_URL, command_timeout=10, record_class=DotRecord)
         except Exception as exc:
             traceback.print_exc()
             self.log.error(f"Could not set up PostgreSQL. Exiting...", exc_info=exc)
@@ -96,27 +87,13 @@ class Light(commands.Bot):
                 if guild.blacklisted:
                     self.guilds_to_leave.append(guild.guild_id)
                     continue
-                guild.prefixes = set(guild.prefixes)
                 self.config_cache[guild.guild_id] = guild
 
-            self.log.info("Database fully setup")
-
-        self.session = aiohttp.ClientSession()
         print(f"Extensions to be loaded are {human_join([str(f) for f in self.initial_extensions])}")
 
-        self.loop.create_task(
-            self.client.start(config.STEAM_USERNAME, config.STEAM_PASSWORD, shared_secret=config.STEAM_SHARED_SECRET)
-        )
-        await super().start(config.TOKEN)
-
-    async def on_command(self, ctx: Context) -> None:
-        self.log.debug(
-            f"""
-Author : {ctx.author!r}
-Guild  : {ctx.guild.name if ctx.guild else 'DMS'} {f"- {ctx.guild.id}" if ctx.guild else ""}
-Message: {ctx.message.clean_content!r}
-{f"Channel: {ctx.channel.name} - {ctx.channel.id}" if ctx.guild else ""}
-""".rstrip()
+        await asyncio.gather(
+            self.client.start(config.STEAM_USERNAME, config.STEAM_PASSWORD, shared_secret=config.STEAM_SHARED_SECRET),
+            super().start(config.TOKEN),
         )
 
     async def on_ready(self) -> None:
@@ -124,7 +101,7 @@ Message: {ctx.message.clean_content!r}
             return
 
         for guild_id in self.guilds_to_leave:
-            if guild := self._connection._get_guild(guild_id):  # noqa
+            if guild := discord.utils.get(self.guilds, id=guild_id):
                 await guild.leave()
 
         await self.client.wait_until_ready()

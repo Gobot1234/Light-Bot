@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from typing import (
+    TYPE_CHECKING,
     Annotated,
     Any,
+    Callable,
     Iterable,
     Literal,
     Optional,
@@ -13,13 +15,14 @@ from typing import (
 )
 
 from asyncpg import Connection, Record
-from donphan import Column, MaybeAcquire, Table as DonphanTable, SQLType
+from donphan import Column, MaybeAcquire, SQLType, Table as DonphanTable
 from donphan.abc import FetchableMeta
+from typing_extensions import Annotated, get_args, get_origin
 
 T = TypeVar("T", bound="Table")
 
 if TYPE_CHECKING:
-    from datetime import datetime, date, timedelta
+    from datetime import date, datetime, timedelta
     from decimal import Decimal
     from ipaddress import IPv4Address, IPv4Network, IPv6Address, IPv6Network
     from uuid import UUID
@@ -38,7 +41,16 @@ if TYPE_CHECKING:
     SQLType.Inet = Union[IPv4Address, IPv6Address]
     SQLType.MACAddr = str
     SQLType.UUID = UUID
-    SQLType.JSON = SQLType.JSONB = dict
+    SQLType.JSON = SQLType.JSONB = dict[str, Any]
+
+
+class DotRecord(Record):
+    """Provide dot access to Records."""
+
+    __slots__ = ()
+
+    def __getattr__(self, name: str) -> Any:
+        return self[name]
 
 
 class AnnotatedTableMeta(FetchableMeta):
@@ -70,24 +82,13 @@ class AnnotatedTableMeta(FetchableMeta):
         return super().__new__(mcs, name, bases, attrs, **kwargs)
 
     def __getattribute__(cls, item: str) -> Any:
-        return super().__getattribute__("__qualname__" if item == "__name__" else item)
+        return super().__getattribute__(
+            "__qualname__" if item == "__name__" else item
+        )  # I manage to mess up __name__ somehow I cba figuring out what's actually up atm.
 
 
 class Table(DonphanTable, metaclass=AnnotatedTableMeta):
-    """Allows for dot access to field names, main reason for this is type checking.
-
-    TypedDicts aren't an option here as they cause base class issues.
-    """
-
-    def __init__(self, *, record: Record, **kwargs: Any):
-        for name, attr in kwargs.items():
-            setattr(self, name, attr)
-        self.record = record
-
-    def __repr__(self) -> str:
-        return (
-            f"<{self.__class__.__name__} {' '.join(f'{name}={getattr(self, name)}' for name in self.__annotations__)}>"
-        )
+    """Allows for dot access to field names, main reason for this is type checking."""
 
     @classmethod
     async def create_tables(cls, connection: Connection) -> None:
@@ -95,37 +96,31 @@ class Table(DonphanTable, metaclass=AnnotatedTableMeta):
             for table in cls.__subclasses__():
                 await table.create(connection=connection, drop_if_exists=False)
 
-    @classmethod
-    async def fetch(cls: type[T], *, order_by: Optional[str] = None, limit: Optional[int] = None, **kwargs) -> list[T]:
-        return [
-            cls(**dict(record), record=record)
-            for record in await super().fetch(order_by=order_by, limit=limit, **kwargs)
-        ]
+    if TYPE_CHECKING:
 
-    @classmethod
-    async def fetchall(cls: type[T], *, order_by: Optional[str] = None, limit: Optional[int] = None) -> list[T]:
-        return [cls(**dict(record), record=record) for record in await super().fetchall(order_by=order_by, limit=limit)]
+        @classmethod
+        async def fetch(
+            cls: type[T], *, order_by: Optional[str] = None, limit: Optional[int] = None, **kwargs
+        ) -> list[T]:
+            ...
 
-    @classmethod
-    async def fetchrow(cls: type[T], *, order_by: Optional[str] = None, **kwargs: Any) -> Optional[T]:
-        if (record := await super().fetchrow(order_by=order_by, **kwargs)) is not None:
-            return cls(**dict(record), record=record)
+        @classmethod
+        async def fetchall(cls: type[T], *, order_by: Optional[str] = None, limit: Optional[int] = None) -> list[T]:
+            ...
 
-    @classmethod
-    async def fetch_where(
-        cls: type[T], where: str, *values: Any, order_by: Optional[str] = None, limit: Optional[int] = None
-    ) -> list[T]:
-        return [
-            cls(**dict(record), record=record)
-            for record in await super().fetch_where(where, *values, order_by=order_by, limit=limit)
-        ]
+        @classmethod
+        async def fetchrow(cls: type[T], *, order_by: Optional[str] = None, **kwargs: Any) -> Optional[T]:
+            ...
 
-    @classmethod
-    async def fetchrow_where(cls: type[T], where: str, *values: Any, order_by: Optional[str] = None) -> list[T]:
-        return [
-            cls(**dict(record), record=record)
-            for record in await super().fetchrow_where(where, *values, order_by=order_by)
-        ]
+        @classmethod
+        async def fetch_where(
+            cls: type[T], where: str, *values: Any, order_by: Optional[str] = None, limit: Optional[int] = None
+        ) -> list[T]:
+            ...
+
+        @classmethod
+        async def fetchrow_where(cls: type[T], where: str, *values: Any, order_by: Optional[str] = None) -> list[T]:
+            ...
 
     @classmethod
     async def insert(
@@ -138,24 +133,16 @@ class Table(DonphanTable, metaclass=AnnotatedTableMeta):
     ) -> Optional[T]:
         if returning == "*":  # short hand for return all
             returning = (getattr(cls, name) for name in cls.__annotations__)
-        record = await super().insert(
+
+        return await super().insert(
             ignore_on_conflict=ignore_on_conflict,
             update_on_conflict=update_on_conflict,
             returning=returning,
             **kwargs,
         )
-        if record is not None:
-            return cls(**dict(record), record=record)
-
-    async def update_record(self, **kwargs: Any) -> None:
-        await super().update_record(self.record, **kwargs)
-
-    async def delete_record(self) -> None:
-        kwargs = {key: value for key, value in self.record.items() if key in self.__annotations__}
-        await super().delete(**kwargs)  # just using delete_record raises an AttributeError if you remove columns
 
 
 class Config(Table):
     guild_id: Annotated[SQLType.BigInt, Column(primary_key=True)]
     blacklisted: bool
-    prefixes: set[str]
+    prefixes: list[str]
