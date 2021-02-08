@@ -40,27 +40,25 @@ class WebhookLogger(Logger):
             to_send = [
                 r
                 for r in await asyncio.gather(
-                    *(asyncio.wait_for(self.queue.get(), timeout=10) for _ in range(5)),
+                    *(asyncio.wait_for(self.queue.get(), timeout=10) for _ in range(10)),
                     return_exceptions=True,
                 )
                 if isinstance(r, LogRecord)
-            ]  # gather up to 5 embeds for sending
+            ]  # gather up to 10 embeds for sending
 
             embeds = []
 
             for record in to_send:
-                page = ["```py\n" if record.exc_info else "```"]
-                if record.exc_info:
-                    exc = traceback.format_exception(*record.exc_info)
-                    page.append("\n".join(exc))
-
-                page.append(record.msg)
-                page.append("```")
 
                 embed = discord.Embed(
                     title=f"logging.{record.levelname} emitted in `{record.pathname}`",
                     colour=self.COLOURS[record.levelno],
-                    description="\n".join(page),
+                    description="\n".join([
+                        f"```{'py' if record.exc_info else ''}",
+                        record.msg,
+                        *(traceback.format_exception(*record.exc_info) if record.exc_info else ()),
+                        "```"
+                    ]),
                     timestamp=datetime.utcfromtimestamp(record.created),
                 )
                 embeds.append(embed)

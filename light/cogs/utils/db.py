@@ -17,7 +17,6 @@ from typing import (
 from asyncpg import Connection, Record
 from donphan import Column, MaybeAcquire, SQLType, Table as DonphanTable
 from donphan.abc import FetchableMeta
-from typing_extensions import Annotated, get_args, get_origin
 
 T = TypeVar("T", bound="Table")
 
@@ -62,7 +61,7 @@ class AnnotatedTableMeta(FetchableMeta):
 
         class Entry(Table):
             id: int
-            created_at: Annotated[datetime, Column(default='NOW()')]
+            created_at: Annotated[datetime, Column(default="NOW()")]
     """
 
     def __new__(mcs, name: str, bases: tuple[type, ...], attrs: dict[str, Any], **kwargs: Any) -> type[Table]:
@@ -92,7 +91,7 @@ class Table(DonphanTable, metaclass=AnnotatedTableMeta):
 
     @classmethod
     async def create_tables(cls, connection: Connection) -> None:
-        async with MaybeAcquire(connection=connection) as connection:
+        async with MaybeAcquire(connection) as connection:
             for table in cls.__subclasses__():
                 await table.create(connection=connection, drop_if_exists=False)
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import asyncio
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING
 
 import discord
 from discord import HTTPException, PartialEmoji
@@ -14,9 +13,6 @@ if TYPE_CHECKING:
 
 class Context(commands.Context):
     bot: Light
-    author: Union[discord.User, discord.Member]
-    channel: discord.TextChannel
-    guild: discord.Guild
     view: StringView
 
     class emoji:
@@ -51,19 +47,3 @@ class Context(commands.Context):
             await self.message.add_reaction(self.emoji.tick if value else self.emoji.cross)
         except HTTPException:
             pass
-
-    async def bin(self, message: Optional[discord.Message] = None, *, timeout: float = 90.0) -> None:
-        message = message or self.message
-
-        def check(reaction: discord.Reaction, user: discord.User) -> bool:
-            return user == self.author and str(reaction.emoji) == "🗑️"
-
-        try:
-            _, __ = await self.bot.wait_for("reaction_add", timeout=timeout, check=check)
-        except asyncio.TimeoutError:
-            try:
-                await message.clear_reactions()
-            except discord.HTTPException:
-                pass
-        else:
-            await message.delete(silent=True)  # noqa

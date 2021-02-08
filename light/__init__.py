@@ -112,8 +112,12 @@ class Light(commands.Bot):
     async def close(self) -> None:
         try:
             self.log.info("About to close the bot")
-            await self.db.close()
-            await self.session.close()
+            if self.db is not None:
+                await self.db.close()
+            if self.session is not None:
+                await self.session.close()
+            if self.client is not None:
+                await self.client.close()
         finally:
             await super().close()
 

@@ -17,7 +17,7 @@ from matplotlib.figure import figaspect
 
 from . import Cog
 from .utils.context import Context
-from .utils.converters import SteamUser
+from .utils.converters import SteamUser, SteamClan
 
 if TYPE_CHECKING:
     from .. import Light
@@ -39,7 +39,6 @@ class ServiceInfo:
 
 
 class SteamStats(NamedTuple):
-    server_info: list[str]
     service_info: list[str]
     game_info: list[str]
     online_info: list[str]
@@ -52,7 +51,7 @@ class Steam(Cog):
     Use {bot_mention}help steam for more info on these.
     """
 
-    @commands.group()
+    @commands.group(case_insensitive=True)
     async def steam(self, ctx: Context) -> None:
         if ctx.invoked_subcommand is None:
             await ctx.send_help(ctx.command)
@@ -60,20 +59,40 @@ class Steam(Cog):
     @steam.command(name="user")
     async def steam_user(self, ctx: Context, user: SteamUser):
         """Show some basic info on a steam user"""
-        friends, games = await asyncio.gather(user.friends(), user.games())
-        embed = discord.Embed(description=user.name, timestamp=user.created_at)
+        friends, games, is_banned = await asyncio.gather(user.friends(), user.games(), user.is_banned())
+        embed = discord.Embed(timestamp=user.created_at, colour=ctx.colour.steam)
+        embed.set_author(name=user.name, url=user.community_url)
         embed.set_thumbnail(url=user.avatar_url)
-        embed.add_field(name="64 bit ID:", value=str(user.id64))
-        embed.add_field(name="Currently playing:", value=str(user.game) or "Nothing")
-        embed.add_field(name="Friends:", value=str(len(friends)))
-        embed.add_field(name="Games:", value=str(len(games)))
+        embed.add_field(name="64 bit ID:", value=user.id64)
+        embed.add_field(name="Friends:", value=len(friends))
+        embed.add_field(name="Games:", value=len(games))
+        embed.add_field(name="Status:", value=user.state.name)
+        embed.add_field(name="Is Banned:", value=is_banned)
+        embed.add_field(name="Currently playing:", value=user.game or "Nothing")
         embed.set_footer(text="Account created on")
-        await ctx.send(f"Info on {user.name}", embed=embed)
+        await ctx.send(embed=embed)
 
     @steam_user.error
     async def on_steam_user_error(self, ctx: Context, error: commands.CommandError):
         if isinstance(error, commands.BadArgument):
             return await ctx.send("User not found")
+        raise error
+
+    @steam.command(name="clan")
+    async def steam_clan(self, ctx: Context, clan: SteamClan):
+        embed = discord.Embed(timestamp=clan.created_at, colour=ctx.colour.steam)
+        embed.set_author(name=clan.name, url=clan.community_url)
+        embed.set_thumbnail(url=clan.icon_url)
+        embed.add_field(name="64 bit ID:", value=clan.id64)
+        embed.add_field(name="Members:", value=clan.member_count)
+        embed.add_field(name="Game:", value=clan.game)
+        embed.set_footer(text="Clan created on")
+        await ctx.send(embed=embed)
+
+    @steam_clan.error
+    async def on_steam_clan_error(self, ctx: Context, error: commands.CommandError):
+        if isinstance(error, commands.BadArgument):
+            return await ctx.send("Clan not found")
         raise error
 
     @executor_function
@@ -108,39 +127,6 @@ class Steam(Cog):
         return discord.File(buf, filename="graph.png")
 
     def map_steam_stats(self, data: dict) -> SteamStats:
-        code_to_city = {
-            "ams": "Amsterdam",
-            "atl": "Atlanta",
-            "bom": "Mumbai",
-            "can": "Guangzhou",
-            "dxb": "Dubai",
-            "eat": "Moses Lake",
-            "fra": "Frankfurt",
-            "gru": "Sao Paulo",
-            "hkg": "Hong Kong",
-            "iad": "Sterling",
-            "jnb": "Johannesburg",
-            "lax": "Los Angeles",
-            "lhr": "London",
-            "lim": "Lima",
-            "lux": "Luxembourg",
-            "maa": "Chennai",
-            "mad": "Madrid",
-            "man": "Manilla",
-            "okc": "Oklahoma City",
-            "ord": "Chicago",
-            "par": "Paris",
-            "scl": "Santiago",
-            "sea": "Seattle",
-            "sgp": "Singapore",
-            "sha": "Shanghai",
-            "sto": "Stockholm",
-            "syd": "Sydney",
-            "tsn": "Tianjin",
-            "tyo": "Tokyo",
-            "vie": "Vienna",
-            "waw": "Warsaw",
-        }
         code_to_game = {
             "artifact": "Artifact",
             "csgo": "CS-GO",
@@ -169,29 +155,24 @@ class Steam(Cog):
                 key=lambda service: service.name,
             )
 
-        cities = gen_service_info(code_to_city)
         games = gen_service_info(code_to_game)
         services = gen_service_info(code_to_service)
         gamers = gen_service_info(code_to_gamers)
 
-        emoji = Context.emoji
-
+        e = Context.emoji
         return SteamStats(
-            server_info=[
-                f"{emoji.tick if city.status >= 80 else emoji.cross} {city.name} - {city.status}%" for city in cities
-            ],
             game_info=[
-                f"{emoji.tick if game.status >= 80 else emoji.cross} {game.name} - "
+                f"{e.tick if game.status >= 80 else e.cross} {game.name} - "
                 f"{'Normal' if game.status >= 80 else game.status}"
                 for game in games
             ],
             service_info=[
-                f"{emoji.tick if service.status >= 80 else emoji.cross} {service.name} - "
+                f"{e.tick if service.status >= 80 else e.cross} {service.name} - "
                 f"{'Normal' if service.status >= 80 else service.status}"
                 for service in services
             ],
             online_info=[f"{gamer.name} - {gamer.status}" for gamer in gamers],
-            is_stable=data["online"] >= 70,
+            is_stable=data["online"] >= 80,
         )
 
     @steam.command(name="stats", aliases=["status", "s"])
@@ -207,22 +188,19 @@ class Steam(Cog):
             graph: discord.File = await self.gen_steam_stats_graph(data)  # noqa
             steam_stats = self.map_steam_stats(data)
 
-            services = "\n".join(steam_stats.service_info)
-            gamers = "\n".join(steam_stats.online_info)
-            embed = discord.Embed(colour=ctx.colour.steam, description=f"{services}\n\n{gamers}")
+            embed = discord.Embed(colour=ctx.colour.steam)
             embed.set_author(
                 name=(
                     f"Steam Stats: {'fully operational' if steam_stats.is_stable else 'potentially unstable'} "
                     f"{'👍' if steam_stats.is_stable else '👎'}"
                 ),
                 icon_url=ctx.emoji.steam.url,
+                url="https://steamstat.us",
             )
 
-            first_column = steam_stats.server_info[: len(steam_stats.server_info) // 2]
-            second_column = steam_stats.server_info[len(steam_stats.server_info) // 2 :]
-            embed.add_field(name="CM Servers:", value="\n".join(first_column))
-            embed.add_field(name="\u200b", value="\n".join(second_column))
+            embed.add_field(name="Services:", value="\n".join(steam_stats.service_info))
             embed.add_field(name="Games:", value="\n".join(steam_stats.game_info))
+            embed.add_field(name="Current players:", value="\n".join(steam_stats.online_info), inline=False)
             embed.set_image(url="attachment://graph.png")
             await ctx.send(embed=embed, file=graph)
 

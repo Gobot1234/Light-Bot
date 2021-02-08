@@ -8,3 +8,4 @@ humanize
 matplotlib
 jishaku
 typer
+asyncpg==0.22
