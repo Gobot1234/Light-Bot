@@ -62,11 +62,12 @@ class Light(commands.Bot):
         logging.getLogger("discord").setLevel(logging.WARNING)
         logging.getLogger("steam").setLevel(logging.WARNING)
         logging.getLogger("matplotlib").setLevel(logging.WARNING)
-        self.log = await logger.WebhookLogger.from_bot(self)
+        self.log = logger.WebhookLogger(adapter)
         self.log.info("Finished setting up logging")
 
     async def start(self) -> None:
         self.session = aiohttp.ClientSession()
+
         await self.setup_logging()
         for extension in self.initial_extensions:
             self.load_extension(resolve_path(extension))
@@ -91,6 +92,7 @@ class Light(commands.Bot):
 
         print(f"Extensions to be loaded are {human_join([str(f) for f in self.initial_extensions])}")
 
+        self.log.info("Booting up")
         await asyncio.gather(
             self.client.start(config.STEAM_USERNAME, config.STEAM_PASSWORD, shared_secret=config.STEAM_SHARED_SECRET),
             super().start(config.TOKEN),
@@ -105,8 +107,8 @@ class Light(commands.Bot):
                 await guild.leave()
 
         await self.client.wait_until_ready()
-        print(f"Logged in as: {self.user} - {self.user.id} -- Version: {discord.__version__} of discord.py")
-        self.log.info(f"Logged in as: {self.user} - {self.user.id} -- Version: {discord.__version__} of discord.py")
+        print(f"Logged as: ({self.user} - {self.user.id}) ({self.client.user} - {self.client.user.id64})")
+        self.log.info(f"Logged as: ({self.user} - {self.user.id}) ({self.client.user} - {self.client.user.id64})")
         self.first_ready = False
 
     async def close(self) -> None:

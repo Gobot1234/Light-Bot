@@ -26,11 +26,7 @@ class WebhookLogger(Logger):
         self.adapter = adapter
         self.queue: asyncio.Queue[LogRecord] = asyncio.Queue()
 
-    @classmethod
-    async def from_bot(cls, bot: Light) -> WebhookLogger:
-        logger = cls(bot.webhook_adapter)
-        asyncio.create_task(logger.sender())
-        return logger
+        asyncio.create_task(self.sender())
 
     def handle(self, record: LogRecord) -> None:
         self.queue.put_nowait(record)
@@ -53,12 +49,14 @@ class WebhookLogger(Logger):
                 embed = discord.Embed(
                     title=f"logging.{record.levelname} emitted in `{record.pathname}`",
                     colour=self.COLOURS[record.levelno],
-                    description="\n".join([
-                        f"```{'py' if record.exc_info else ''}",
-                        record.msg,
-                        *(traceback.format_exception(*record.exc_info) if record.exc_info else ()),
-                        "```"
-                    ]),
+                    description="\n".join(
+                        [
+                            f"```{'py' if record.exc_info else ''}",
+                            record.msg,
+                            *(traceback.format_exception(*record.exc_info) if record.exc_info else ()),
+                            "```",
+                        ]
+                    ),
                     timestamp=datetime.utcfromtimestamp(record.created),
                 )
                 embeds.append(embed)

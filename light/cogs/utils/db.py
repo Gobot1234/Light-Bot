@@ -2,16 +2,13 @@ from __future__ import annotations
 
 from typing import (
     TYPE_CHECKING,
-    Annotated,
     Any,
     Callable,
     Iterable,
     Literal,
     Optional,
     TypeVar,
-    Union,
-    get_args,
-    get_origin,
+    Union, List,
 )
 
 from asyncpg import Connection, Record
@@ -144,4 +141,4 @@ class Table(DonphanTable, metaclass=AnnotatedTableMeta):
 class Config(Table):
     guild_id: Annotated[SQLType.BigInt, Column(primary_key=True)]
     blacklisted: bool
-    prefixes: list[str]
+    prefixes: List[str]
