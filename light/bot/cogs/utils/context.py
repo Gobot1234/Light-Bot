@@ -6,9 +6,12 @@ import discord
 from discord import HTTPException, PartialEmoji
 from discord.ext import commands
 from discord.ext.commands.view import StringView
+from steam import HTTPException, User
+
+from light.db import SteamUser
 
 if TYPE_CHECKING:
-    from ... import Light
+    from light import Light
 
 
 class Context(commands.Context):
@@ -47,3 +50,15 @@ class Context(commands.Context):
             await self.message.add_reaction(self.emoji.tick if value else self.emoji.cross)
         except HTTPException:
             pass
+
+    @property
+    async def user(self) -> User | None:
+        """The command invoker's steam account, if applicable"""
+        user = await SteamUser.fetch_row(id=self.author.id)
+        if user is None:
+            await self.send("A helpful message about how to get this to work")
+            return
+        try:
+            return self.bot.client.get_user(user.id64) or await self.bot.client.fetch_user(user.id64)
+        except HTTPException:
+            await self.send("Your account is private or steam is down")  # could actually use steam stats to tell :)

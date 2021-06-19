@@ -5,9 +5,10 @@ from typing import TYPE_CHECKING, Literal
 import discord
 from discord.ext import commands
 
+from light.db import Config
+
 from . import Cog
 from .utils.context import Context
-from .utils.db import Config
 
 if TYPE_CHECKING:
     from .. import Light
@@ -21,20 +22,19 @@ class Listeners(Cog):
 
     @commands.Cog.listener()
     async def on_guild_join(self, guild: discord.Guild) -> None:
-        record = await Config.fetchrow(guild_id=guild.id)
-        if record is not None and record.blacklisted:
+        config = await Config.fetch_row(guild_id=guild.id)
+        if config is None:
+            config = await Config.insert(guild_id=guild.id, prefixes=["="], returning="*")
+        elif config.blacklisted:
             self.bot.log.info(f"Leaving {guild.name!r} - {guild.id} as it is a blacklisted guild")
             return await guild.leave()
-
-        record = await Config.insert(guild_id=guild.id, blacklisted=False, prefixes=["="], returning="*")
-        record.prefixes = {"="}
-        self.bot.config_cache[record.guild_id] = record
+        self.bot.configs[config.guild_id] = config
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild) -> None:
-        if not (record := await Config.fetchrow(guild_id=guild.id)).blacklisted:
-            await record.delete_record()
-            self.bot.config_cache.pop(guild.id)
+        if not (record := await Config.fetch_row(guild_id=guild.id)).blacklisted:
+            await Config.delete_record(record)
+            self.bot.configs.pop(guild.id)
             self.bot.log.info(f"Leaving guild {guild.name} - {guild.id}")
 
 

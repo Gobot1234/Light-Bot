@@ -1,16 +1,12 @@
 from __future__ import annotations
 
 import difflib
-from typing import TYPE_CHECKING
 
 import discord
 from discord.ext import commands, menus
 
-from .utils.context import Context
-from .utils.paginator import InfoPaginator
-
-if TYPE_CHECKING:
-    from .. import Light
+from .context import Context
+from .paginator import InfoPaginator
 
 
 class EmbedHelpCommand(commands.HelpCommand):
@@ -18,13 +14,13 @@ class EmbedHelpCommand(commands.HelpCommand):
     COLOUR = discord.Colour.blurple()
 
     def get_ending_note(self) -> str:
-        return f"Use {self.clean_prefix}{self.invoked_with} [command] for more info on a command."
+        return f"Use {self.context.clean_prefix}{self.invoked_with} [command] for more info on a command."
 
     def get_command_signature(self, command: commands.Command) -> str:
         return f"{command.qualified_name} {command.signature}"
 
     def format_help(self, string: str) -> str:
-        return string.format(clean_prefix=self.clean_prefix, bot_mention=self.context.bot.user.mention,)
+        return string.format(clean_prefix=self.context.clean_prefix, bot_mention=self.context.bot.user.mention)
 
     async def send_bot_help(self, mapping: dict[commands.Cog, list[commands.Command]]) -> None:
         entries = []
@@ -40,6 +36,7 @@ class EmbedHelpCommand(commands.HelpCommand):
 
                 embed.set_footer(text=self.get_ending_note())
                 entries.append(embed)
+
         source = menus.ListPageSource(entries, per_page=1)
         source.format_page = lambda menu, page: page
         await InfoPaginator(source, delete_message_after=True).start(self.context)
@@ -47,7 +44,7 @@ class EmbedHelpCommand(commands.HelpCommand):
     async def send_cog_help(self, cog: commands.Cog):
         embed = discord.Embed(title=f"{cog.qualified_name} Commands", colour=self.COLOUR)
         if cog.description:
-            embed.description = self.format_help(self.format_help(cog.description))
+            embed.description = self.format_help(cog.description)
 
         filtered = await self.filter_commands(cog.get_commands(), sort=True)
         for command in filtered:
@@ -63,7 +60,7 @@ class EmbedHelpCommand(commands.HelpCommand):
     async def send_command_help(self, command: commands.Command) -> None:
         embed = discord.Embed(title=command.qualified_name, colour=self.COLOUR)
         if command.help:
-            embed.description = command.help.format(clean_prefix=self.clean_prefix)
+            embed.description = command.help.format(clean_prefix=self.context.clean_prefix)
 
         if isinstance(command, commands.Group):
             filtered = await self.filter_commands(command.commands, sort=True)
@@ -98,12 +95,3 @@ class EmbedHelpCommand(commands.HelpCommand):
             colour=discord.Colour.red(),
         )
         await self.get_destination().send(embed=embed)
-
-
-def setup(bot: Light) -> None:
-    bot._original_help_command = bot.help_command
-    bot.help_command = EmbedHelpCommand()
-
-
-def teardown(bot: Light) -> None:
-    bot.help_command = bot._original_help_command  # noqa

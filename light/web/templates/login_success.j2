@@ -1,0 +1,11 @@
+<form action="/register/{{ session_id }}" method="post">
+    <label for="user">Choose your main account:</label>
+    <select name="user" id="user">
+        {% for user in users %}
+            <option value={{ user.id64 }}>{{ user.name }}</option>
+        {% endfor %}
+    </select>
+    <br><br>
+
+    <input type="submit" value="Submit">
+</form>

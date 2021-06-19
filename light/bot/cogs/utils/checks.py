@@ -99,11 +99,3 @@ def admin_or_permissions(**perms: bool):
         return await check_guild_permissions(ctx, perms, check=any)
 
     return commands.check(predicate)
-
-
-class NoChannelProvided(commands.CommandError):
-    """Error raised when no suitable voice channel was supplied."""
-
-
-class IncorrectChannelError(commands.CommandError):
-    """Error raised when commands are issued outside of the players session channel."""
